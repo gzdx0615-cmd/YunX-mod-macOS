@@ -30,6 +30,9 @@ object JcefHolder {
     private const val TAG = "YunX-JCEF"
     private const val MAX_INIT_ATTEMPTS = 3
 
+    /** 隔离目录前缀：`cache\jcef.crashed-<时间>` */
+    private const val QUARANTINE_PREFIX = "jcef.crashed-"
+
     @Volatile
     private var cefApp: CefApp? = null
 
@@ -45,7 +48,11 @@ object JcefHolder {
     private val lock = Any()
     private var initThread: Thread? = null
 
-    fun initBlocking(noSandbox: Boolean = false) {
+    /** 一次性：本次进程是否已做过「上次异常退出」的检测（多次重试只做一次） */
+    @Volatile
+    private var crashRecoveryDone = false
+
+    fun initBlocking() {
         synchronized(lock) {
             if (browserReady) return
             var lastError: Throwable? = null
@@ -56,13 +63,20 @@ object JcefHolder {
                         Thread.sleep(600L * (attempt - 1))
                     }
                     killStaleJcefHelpers()
+                    recoverFromAbnormalExit()
                     val builder = CefAppBuilder()
-                    builder.setInstallDir(File(AppContext.cacheDir, "jcef-bundle"))
-                    if (noSandbox) {
-                        // 受限/沙箱环境（如 CI）下 Chromium 进程沙箱拿不到目录授权，禁用之（仅诊断冒烟用）
-                        builder.addJcefArgs("--no-sandbox")
+                    val installDir = File(AppContext.cacheDir, "jcef-bundle")
+                    builder.setInstallDir(installDir)
+                    // 发布包带的是 app\jcef-natives.tar.gz（不含原生 jar）：
+                    // 自己解包到 installDir 后让 jcefmaven 跳过安装步骤。开发运行无此压缩包，
+                    // ensureInstalled 返回 false，仍由 jcefmaven 从 classpath 的原生 jar 安装。
+                    if (JcefNativesInstaller.ensureInstalled(installDir)) {
+                        builder.setSkipInstallation(true)
                     }
                     val settings = builder.getCefSettings()
+                    // 发布包只随带 locales/zh-CN.pak（见 tools/JcefNativesPacker.kt），
+                    // 这里显式指定 locale，避免按系统语言去找不存在的语言包
+                    settings.locale = "zh-CN"
                     settings.windowless_rendering_enabled = false
                     // CEF 要求 cache_path 必须是 root_cache_path 的子目录
                     settings.root_cache_path = File(AppContext.cacheDir, "jcef").absolutePath
@@ -72,6 +86,7 @@ object JcefHolder {
                     cefApp = builder.build()
                     browserReady = true
                     initFailure = null
+                    markRunning()
                     Log.i(TAG, "JCEF initialized (attempt $attempt)")
                     return
                 } catch (t: Throwable) {
@@ -90,11 +105,11 @@ object JcefHolder {
      * - 上一次尝试失败后再次调用会开启新一轮重试（登录页打开时调用，见 CookieLoginContent）。
      * 完成后 [browserReady] 置为 true，登录页自动切换为内嵌浏览器模式。
      */
-    fun initInBackground(noSandbox: Boolean = false) {
+    fun initInBackground() {
         synchronized(lock) {
             if (browserReady) return
             if (initThread?.isAlive == true) return
-            initThread = Thread({ initBlocking(noSandbox) }, "JCEF-Init").apply {
+            initThread = Thread({ initBlocking() }, "JCEF-Init").apply {
                 isDaemon = true
                 start()
             }
@@ -134,5 +149,57 @@ object JcefHolder {
             Log.w(TAG, "CefApp dispose failed: ${it.message}")
         }
         cefApp = null
+        // 正常释放：清掉运行标记，避免下次启动被误判为异常退出
+        runCatching { runningMarker().delete() }
+    }
+
+    /** 运行中标记：CEF 初始化成功后写入，正常退出时删除；启动时若仍存在，说明上次没有正常释放 */
+    private fun runningMarker(): File = File(AppContext.cacheDir, ".yunx-jcef-running")
+
+    private fun markRunning() {
+        runCatching { runningMarker().writeText(System.currentTimeMillis().toString()) }
+            .onFailure { Log.w(TAG, "写入运行标记失败: ${it.message}") }
+    }
+
+    /**
+     * 处理上次异常退出（issue #34）：
+     * 启动时若发现「CEF 已初始化成功、但没有正常释放」的残留标记，说明上个进程多半是被 libcef 的
+     * fail-fast 直接带走（日志最后一行停在 `JCEF initialized`，随后 csrss 弹「中断点 已到达中断点」，
+     * 退出码 0x80000003）。这种情况下 CEF 用户数据目录（cache\jcef）往往已损坏且不会自愈，
+     * 因此把它整体隔离（重命名为 `jcef.crashed-<时间>`，留一份供排查）后由 CEF 重建全新 profile。
+     * 只隔离一次：隔离 / 删除成功才清标记，失败则保留标记供下次启动重试。
+     */
+    private fun recoverFromAbnormalExit() {
+        if (crashRecoveryDone) return
+        crashRecoveryDone = true
+        val marker = runningMarker()
+        if (!marker.isFile) return
+        Log.w(TAG, "检测到上次异常退出（CEF 未正常释放），隔离并重建浏览器数据目录")
+        if (quarantineProfile()) {
+            runCatching { marker.delete() }
+        } else {
+            Log.w(TAG, "浏览器数据目录隔离失败，保留标记供下次启动重试")
+        }
+    }
+
+    /** 隔离（优先重命名，失败则退回删除）疑似损坏的 CEF profile；处理成功返回 true */
+    private fun quarantineProfile(): Boolean {
+        val profile = File(AppContext.cacheDir, "jcef")
+        if (!profile.exists()) return true
+        val quarantined = File(AppContext.cacheDir, "$QUARANTINE_PREFIX${System.currentTimeMillis()}")
+        if (runCatching { profile.renameTo(quarantined) }.getOrDefault(false)) {
+            Log.w(TAG, "已将疑似损坏的浏览器数据目录隔离到 ${quarantined.name}")
+            pruneQuarantines(keep = quarantined.name)
+            return true
+        }
+        Log.w(TAG, "重命名隔离失败，改为直接删除浏览器数据目录")
+        return runCatching { profile.deleteRecursively() }.getOrDefault(false)
+    }
+
+    /** 只保留最近一次隔离目录，避免崩溃反复发生时把磁盘撑满 */
+    private fun pruneQuarantines(keep: String) {
+        AppContext.cacheDir.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith(QUARANTINE_PREFIX) && it.name != keep }
+            ?.forEach { runCatching { it.deleteRecursively() } }
     }
 }

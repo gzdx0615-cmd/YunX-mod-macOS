@@ -40,6 +40,15 @@ class SettingsRepository {
             if (value.isNullOrBlank()) prefs.remove("download_dir_uri") else prefs.put("download_dir_uri", value)
         }
 
+    /** 浏览器插件劫持弹窗上次选择的保存目录（空串 = 跟随上面的全局保存目录） */
+    var browserHookLastSaveDir: String
+        get() = prefs.get("browser_hook_last_save_dir", "")
+        set(value) {
+            val v = value.trim()
+            if (v.isEmpty()) prefs.remove("browser_hook_last_save_dir")
+            else prefs.put("browser_hook_last_save_dir", v)
+        }
+
     /**
      * 最大同时下载任务数（默认 3，超出的任务排队等待）。
      *
@@ -72,6 +81,18 @@ class SettingsRepository {
         get() = prefs.getBoolean("keep_awake_downloading", prefs.getBoolean("keep_download_when_locked", true))
         set(value) {
             prefs.putBoolean("keep_awake_downloading", value)
+        }
+
+    /**
+     * 全部下载任务结束后自动关机（下载页「完成后关机」开关）。
+     *
+     * 这里只存开关值：真正的判定与倒计时由 [com.yunx.app.ui.viewmodel.DownloadViewModel] 常驻的
+     * 观察协程负责（放在 ViewModel 而不是下载页，切到别的 Tab 下载页被销毁也照样生效）。
+     */
+    var shutdownWhenDownloadsComplete: Boolean
+        get() = prefs.getBoolean("shutdown_when_downloads_complete", false)
+        set(value) {
+            prefs.putBoolean("shutdown_when_downloads_complete", value)
         }
 
     /** 通知中心进度样式（Windows 通知中心 toast：true 时进度条附带下载速度） */
@@ -173,6 +194,33 @@ class SettingsRepository {
             prefs.put("close_behavior", value)
         }
 
+    /**
+     * 主窗口启动位置（设置 → 主题与外观 → 窗口）：默认「上次关闭位置」。
+     * 取值见 [WINDOW_POS_LAST] / [WINDOW_POS_TOP_LEFT] 等；非法值一律回退为「上次关闭位置」。
+     * **改动需重启生效**（启动时只读一次）。
+     */
+    var windowStartupPosition: String
+        get() = normalizeWindowPosition(prefs.get("window_startup_position", WINDOW_POS_LAST))
+        set(value) {
+            prefs.put("window_startup_position", normalizeWindowPosition(value))
+        }
+
+    /** 上次主窗口关闭时的屏幕坐标（"x,y"，AWT 像素）；null = 尚未记录（首次启动用平台默认位置） */
+    var windowLastPosition: String?
+        get() = prefs.get("window_last_position", null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove("window_last_position")
+            else prefs.put("window_last_position", value)
+        }
+
+    /** 自定义主窗口启动位置（"x,y"，AWT 屏幕像素；由「设置位置」拖拽确定）；null = 尚未设置 */
+    var windowCustomPosition: String?
+        get() = prefs.get("window_custom_position", null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove("window_custom_position")
+            else prefs.put("window_custom_position", value)
+        }
+
     /** 桌面图标样式（桌面版无 activity-alias，保留设置项占位） */
     var appIconVariant: Int
         get() = prefs.getInt("app_icon_variant", 0)
@@ -208,6 +256,16 @@ class SettingsRepository {
             prefs.putInt("theme_color_mode", value.coerceIn(0, 2))
         }
 
+    /**
+     * 「减少动画」开关（设置 → 主题与外观 → 动效）：默认关。
+     * 开启后关闭页面切换位移、列表增删等装饰性动画（与软件渲染判定取「或」，见 MotionPolicy）。
+     */
+    var reduceMotion: Boolean
+        get() = prefs.getBoolean("reduce_motion", false)
+        set(value) {
+            prefs.putBoolean("reduce_motion", value)
+        }
+
     /** 自定义主题种子色（ARGB 值） */
     var themeSeedColor: Long
         get() = prefs.getLong("theme_seed_color", DEFAULT_SEED_COLOR)
@@ -216,13 +274,27 @@ class SettingsRepository {
         }
 
     /**
-     * 自定义 GitHub 下载镜像前缀（如 "https://gh.dpik.top/"）。
-     * null/空字符串表示使用内置默认镜像（UpdateChecker.MIRROR_PREFIX）。
+     * 固定使用的 GitHub 下载镜像前缀（预选镜像或用户自定义，如 "https://gh.dpik.top/"）。
+     * null/空字符串表示「自动」：由 GitHubMirror 实测各预选镜像、选最快的一个。
      */
     var githubMirrorPrefix: String?
         get() = prefs.get("github_mirror_prefix", null)
         set(value) {
             if (value.isNullOrBlank()) prefs.remove("github_mirror_prefix") else prefs.put("github_mirror_prefix", value)
+        }
+
+    /** 最近一次镜像测速得到的最快前缀（缓存，避免每次启动都重新测速）；null 表示尚未测过 */
+    var githubMirrorFastest: String?
+        get() = prefs.get("github_mirror_fastest", null)
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove("github_mirror_fastest") else prefs.put("github_mirror_fastest", value)
+        }
+
+    /** 最近一次镜像测速完成的时间戳（毫秒）；0 表示从未测过 */
+    var githubMirrorProbedAt: Long
+        get() = prefs.getLong("github_mirror_probed_at", 0L)
+        set(value) {
+            prefs.putLong("github_mirror_probed_at", value)
         }
 
     /**
@@ -318,6 +390,28 @@ class SettingsRepository {
             )
         }
 
+    /**
+     * 实验性：单线程直写。
+     * 线程数为 1 时不再写缓存分片，直接写目标目录的 `.yunx-*.part`，完成后改名。
+     * 目标盘峰值从「分片 + 成品」降为 1 份，缓存盘占用为 0。
+     */
+    var directWriteSingleThread: Boolean
+        get() = prefs.getBoolean("direct_write_single_thread", DEFAULT_DIRECT_WRITE_SINGLE_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_single_thread", value)
+        }
+
+    /**
+     * 实验性：多线程直写。
+     * 线程数 > 1 时预分配目标目录的单个 `.yunx-*.part`，各线程按字节偏移写入；
+     * 进度由同目录的 `.plan` / `.done` 清单维护，完成后校验并改名。
+     */
+    var directWriteMultiThread: Boolean
+        get() = prefs.getBoolean("direct_write_multi_thread", DEFAULT_DIRECT_WRITE_MULTI_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_multi_thread", value)
+        }
+
     /** 主页快捷方式（默认关）：开启后在解析页以横向快捷方式展示收藏，点击直达解析 */
     var homeShortcutEnabled: Boolean
         get() = prefs.getBoolean("home_shortcut_enabled", false)
@@ -341,8 +435,116 @@ class SettingsRepository {
         }
 
     /**
+     * BT tracker 列表（每行一个，见「设置 → 下载引擎 → Gopeed 引擎」）：空 = 用内置默认列表。
+     * 只对 Gopeed 引擎的 BT 任务（磁力 / 种子文件）生效，由引擎的 `protocolConfig.bt.customTrackers` 承载。
+     */
+    var btTrackers: String
+        get() = prefs.get("bt_trackers", "")
+        set(value) {
+            val v = value.trim()
+            if (v.isEmpty()) prefs.remove("bt_trackers") else prefs.put("bt_trackers", v)
+        }
+
+    /**
+     * 是否启用 BT 的 DHT（默认开）：关掉后只能靠 tracker / PEX 找 peer，纯 tracker 场景更可控，
+     * 但公网磁力在 tracker 全挂时可能解析不出元数据。对应引擎的 `protocolConfig.bt.disableDht`（取反）。
+     */
+    var btDhtEnabled: Boolean
+        get() = prefs.getBoolean("bt_dht_enabled", true)
+        set(value) {
+            prefs.putBoolean("bt_dht_enabled", value)
+        }
+
+    /**
+     * 实际下发给引擎的 tracker 列表：用户在设置里填的优先，没填则用内置默认列表；
+     * 过滤掉不是 tracker 协议的脏行并去重（`udp://` / `http(s)://` / `ws(s)://`）。
+     */
+    fun resolvedBtTrackers(): List<String> {
+        val lines = btTrackers.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        val source = if (lines.isNotEmpty()) lines else DEFAULT_BT_TRACKERS
+        return source.map { it.trim() }.filter { isTrackerUrl(it) }.distinct()
+    }
+
+    /** 是不是合法的 tracker URL（只做前缀判断，具体连通性交给引擎） */
+    private fun isTrackerUrl(value: String): Boolean {
+        val v = value.lowercase()
+        return v.startsWith("udp://") || v.startsWith("http://") ||
+            v.startsWith("https://") || v.startsWith("ws://") || v.startsWith("wss://")
+    }
+
+    /**
+     * 多账号下载（**实验性**，代号 C1）：默认关。
+     *
+     * 开启后，同一个网盘登录了多个账号时，批量下载会把每个文件轮换交给不同账号去取直链，
+     * 绕开单账号的并发数 / 限速限制（每个文件仍只用一个账号下载）。
+     * ★ 只有「账号列表里不止一个账号」的平台才有实际效果；开启前设置页有二次风险确认。
+     */
+    var multiAccountDownload: Boolean
+        get() = prefs.getBoolean("multi_account_download", false)
+        set(value) {
+            prefs.putBoolean("multi_account_download", value)
+        }
+
+    /**
+     * 单文件多源分片（**实验性**，代号 C2）：默认关，**依赖 [multiAccountDownload]**。
+     *
+     * 开启后，同一个文件用多个账号各取一条直链，分片轮流交给不同直链下载（真正提速单个大文件）。
+     * 目前只覆盖夸克 / UC / 迅雷；其他平台即使开着也退回单源。
+     * ★ 关掉 C1 时必须一起关掉它（设置页与读取处都按「C1 关 ⇒ C2 无效」处理），
+     *   否则会出现「多账号下载关了、单文件还在多账号取链」的不一致状态。
+     */
+    var multiSourceDownload: Boolean
+        get() = prefs.getBoolean("multi_source_download", false)
+        set(value) {
+            prefs.putBoolean("multi_source_download", value)
+        }
+
+    /** C2 是否真正生效：开关开着且 C1 也开着（C2 依赖 C1，见 [multiSourceDownload]） */
+    fun multiSourceActive(): Boolean = multiAccountDownload && multiSourceDownload
+
+    /** 关闭 C1 时强制关掉 C2（C2 依赖 C1）：设置页切 C1 与读取端都用这一处口径 */
+    fun disableMultiSource() {
+        prefs.putBoolean("multi_source_download", false)
+    }
+
+    /**
+     * 视频预览引擎选择（见「设置 → 引擎管理 → 视频预览引擎」）：
+     * - [PREVIEW_AUTO]（默认）：能拿到 ffplay 就优先用（真·在线预览），否则回退内置 JavaFX；
+     * - [PREVIEW_JAVA_FX]：始终用内置 JavaFX `MediaView`（需先落盘，兼容性最好）；
+     * - [PREVIEW_FFPLAY]：强制用 ffplay 子进程（缺失时会提示下载 ffmpeg）。
+     * 非法值（手改偏好）一律按自动处理。
+     */
+    var previewEngine: String
+        get() = when (prefs.get("preview_engine", PREVIEW_AUTO)) {
+            PREVIEW_JAVA_FX -> PREVIEW_JAVA_FX
+            PREVIEW_FFPLAY -> PREVIEW_FFPLAY
+            else -> PREVIEW_AUTO
+        }
+        set(value) {
+            prefs.put(
+                "preview_engine",
+                when (value) {
+                    PREVIEW_JAVA_FX -> PREVIEW_JAVA_FX
+                    PREVIEW_FFPLAY -> PREVIEW_FFPLAY
+                    else -> PREVIEW_AUTO
+                }
+            )
+        }
+
+    /**
+     * 是否已提醒过用户安装 ffmpeg 引擎（视频预览与 DASH 合轨共用同一标记）。
+     * 首次遇到「缺引擎」时弹一次提示，之后不再自动打扰；用户后来装了引擎会自动启用。
+     */
+    var ffmpegEngineAsked: Boolean
+        get() = prefs.getBoolean("ffmpeg_engine_asked", false)
+        set(value) {
+            prefs.putBoolean("ffmpeg_engine_asked", value)
+        }
+
+    /**
      * 重置「实验性功能」页全部设置为默认值：
-     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭。
+     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭、
+     * 多账号下载 / 单文件多源分片关闭。
      * 运行时同步（HttpClients.setHttp2Enabled / DownloadTuning.applyFrom）由调用方负责。
      */
     fun resetExperimentalFeatures() {
@@ -351,13 +553,24 @@ class SettingsRepository {
         slowPreemptEnabled = DEFAULT_SLOW_PREEMPT_ENABLED
         slowPreemptMinBps = DEFAULT_SLOW_PREEMPT_MIN_BPS
         slowPreemptMinAgeMs = DEFAULT_SLOW_PREEMPT_MIN_AGE_MS
+        directWriteSingleThread = DEFAULT_DIRECT_WRITE_SINGLE_THREAD
+        directWriteMultiThread = DEFAULT_DIRECT_WRITE_MULTI_THREAD
         homeShortcutEnabled = false
+        multiAccountDownload = false
+        multiSourceDownload = false
     }
 
     /** 归一化代理模式：非法值一律回退为直连 */
     private fun normalizeProxyMode(value: String): String = when (value) {
         PROXY_MODE_SYSTEM, PROXY_MODE_MANUAL -> value
         else -> PROXY_MODE_DIRECT
+    }
+
+    /** 归一化主窗口启动位置：非法值一律回退为「上次关闭位置」 */
+    private fun normalizeWindowPosition(value: String): String = when (value) {
+        WINDOW_POS_TOP_LEFT, WINDOW_POS_BOTTOM_LEFT, WINDOW_POS_CENTER,
+        WINDOW_POS_TOP_RIGHT, WINDOW_POS_BOTTOM_RIGHT, WINDOW_POS_CUSTOM -> value
+        else -> WINDOW_POS_LAST
     }
 
     companion object {
@@ -367,6 +580,21 @@ class SettingsRepository {
         const val CLOSE_BEHAVIOR_EXIT = "exit"
         /** 关闭行为：最小化到系统托盘 */
         const val CLOSE_BEHAVIOR_TRAY = "tray"
+
+        /** 主窗口启动位置：上次关闭的位置（默认） */
+        const val WINDOW_POS_LAST = "last"
+        /** 主窗口启动位置：屏幕左上角 */
+        const val WINDOW_POS_TOP_LEFT = "topLeft"
+        /** 主窗口启动位置：屏幕左下角 */
+        const val WINDOW_POS_BOTTOM_LEFT = "bottomLeft"
+        /** 主窗口启动位置：屏幕居中 */
+        const val WINDOW_POS_CENTER = "center"
+        /** 主窗口启动位置：屏幕右上角 */
+        const val WINDOW_POS_TOP_RIGHT = "topRight"
+        /** 主窗口启动位置：屏幕右下角 */
+        const val WINDOW_POS_BOTTOM_RIGHT = "bottomRight"
+        /** 主窗口启动位置：自定义（用「设置位置」拖拽记录下来的坐标，见 [windowCustomPosition]） */
+        const val WINDOW_POS_CUSTOM = "custom"
 
         /** 代理模式：不使用代理（直连） */
         const val PROXY_MODE_DIRECT = "direct"
@@ -380,6 +608,38 @@ class SettingsRepository {
         /** 下载引擎：外部 Gopeed 引擎（exe 子进程 + 本地 HTTP API） */
         const val ENGINE_GOPEED = "gopeed"
 
+        /**
+         * BT 内置默认 tracker 列表（用户没自定义时下发给引擎）。
+         * 取自长期在线的公共 tracker（trackerslist 系维护的常用集合），覆盖 udp/http/ws 三类协议，
+         * 尽量提高公网磁力/种子在无 DHT 情况下的元数据获取成功率。
+         */
+        val DEFAULT_BT_TRACKERS = listOf(
+            "udp://tracker.opentrackr.org:1337/announce",
+            "udp://open.tracker.cl:1337/announce",
+            "udp://open.demonii.com:1337/announce",
+            "udp://tracker.torrent.eu.org:451/announce",
+            "udp://exodus.desync.com:6969/announce",
+            "udp://tracker.openbittorrent.com:6969/announce",
+            "udp://opentracker.i2p.rocks:6969/announce",
+            "udp://explodie.org:6969/announce",
+            "udp://tracker1.bt.moack.co.kr:80/announce",
+            "udp://tracker.dler.org:6969/announce",
+            "udp://tracker.tiny-vps.com:6969/announce",
+            "https://tracker.tamersunion.org:443/announce",
+            "https://tracker.gbitt.info:443/announce",
+            "https://opentracker.i2p.rocks:443/announce",
+            "https://tracker.nanoha.org:443/announce",
+            "wss://tracker.openwebtorrent.com:443/announce",
+            "wss://tracker.btorrent.xyz:443/announce"
+        )
+
+        /** 预览引擎：自动（有 ffplay 就用，否则回退内置 JavaFX）—— 默认 */
+        const val PREVIEW_AUTO = "auto"
+        /** 预览引擎：内置 JavaFX MediaView（需先落盘，兼容性最好） */
+        const val PREVIEW_JAVA_FX = "javafx"
+        /** 预览引擎：ffplay 子进程（真·在线预览，需 ffmpeg） */
+        const val PREVIEW_FFPLAY = "ffplay"
+
         const val DEFAULT_DOWNLOAD_THREADS = 32
         const val MAX_DOWNLOAD_THREADS = 512
         const val XUNLEI_DOWNLOAD_THREADS = 8
@@ -389,6 +649,10 @@ class SettingsRepository {
 
         /** HTTP/2 默认关闭（与现状一致：仅使用 HTTP/1.1） */
         const val DEFAULT_HTTP2_ENABLED = false
+
+        /** 实验性直写默认关闭：默认仍走缓存分片 + 合并，保证现有行为不变 */
+        const val DEFAULT_DIRECT_WRITE_SINGLE_THREAD = false
+        const val DEFAULT_DIRECT_WRITE_MULTI_THREAD = false
 
         /**
          * 下载读缓冲默认 64KB（与 ChunkDownloader.BUFFER_SIZE 一致，保证默认行为不变）。

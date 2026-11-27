@@ -2,6 +2,8 @@ package com.yunx.app.ui.screens
 
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
+import com.yunx.app.ui.theme.Motion
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -9,7 +11,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -120,7 +121,8 @@ fun CloudDriveScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -133,7 +135,7 @@ fun CloudDriveScreen(
         AnimatedContent(
             targetState = state,
             transitionSpec = {
-                fadeIn(tween(200)) togetherWith fadeOut(tween(140))
+                Motion.fade(200, 140)
             },
             label = "cloudState"
         ) { s ->
@@ -266,7 +268,7 @@ fun CloudDriveScreen(
             items(s.files, key = { it.fid }) { file ->
                 ShareFileRow(
                     file = file,
-                    modifier = Modifier.animateItem(),
+                    modifier = animateItemIfAllowed(),
                     onClick = {
                         if (viewModel.multiSelectMode) {
                             viewModel.toggleSelect(file)
@@ -276,14 +278,14 @@ fun CloudDriveScreen(
                             viewModel.openActions(file)
                         }
                     },
-                    // 多选模式：隐藏行尾按钮；非多选时文件夹显示「更多」、全部可长按进入多选
-                    onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                    // 多选模式：隐藏行尾按钮；非多选时全部显示「更多」，右键打开操作菜单
+                    onMore = if (!viewModel.multiSelectMode) {
                         { viewModel.openActions(file) }
                     } else {
                         null
                     },
-                    onLongClick = if (!viewModel.multiSelectMode) {
-                        { viewModel.enterMultiSelect(file) }
+                    onContextMenu = if (!viewModel.multiSelectMode) {
+                        { viewModel.openActions(file) }
                     } else {
                         null
                     },
@@ -342,6 +344,10 @@ fun CloudDriveScreen(
         FileActionSheet(
             file = file,
             viewModel = viewModel,
+            onMultiSelect = {
+                viewModel.dismissActions()
+                viewModel.enterMultiSelect(file)
+            },
             onDismiss = { viewModel.dismissActions() }
         )
     }

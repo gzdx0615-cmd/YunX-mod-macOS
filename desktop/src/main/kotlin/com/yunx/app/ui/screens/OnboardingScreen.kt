@@ -40,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Favorite
@@ -60,6 +61,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import com.yunx.app.APP_VERSION
 import com.yunx.app.ui.GlobalSnackbarHost
 import com.yunx.app.ui.SnackbarController
+import com.yunx.app.ui.theme.MotionPolicy
 import com.yunx.app.util.DesktopActions
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -108,7 +112,7 @@ private const val FADE_OUT_MS = 140
  * - 背景：Animated Blob（流体渐变），自绘实现，不引第三方库。
  *
  * ★ 桌面端差异：上游的「权限准备」（通知 / 后台运行 / 存储）在桌面没有对应概念，换成了桌面版自己的
- *   功能特性页；第 4 页是本移植版新增的首次运行配置页。
+ *   功能特性页；第 4 页是桌面版新增的首次运行配置页。
  * ★ 限宽：手机端页面本来就只有几百 dp 宽，桌面窗口默认 1100dp —— 所有页面正文都限宽
  *   居中（[CONTENT_MAX_WIDTH]），否则一行文本横跨整个窗口，观感与上游差异极大。
  */
@@ -195,17 +199,22 @@ private fun BlobBackground(modifier: Modifier = Modifier) {
         Triple(scheme.tertiary, 0.28f, 0.34f),
         Triple(scheme.secondary, 0.24f, 0.67f)
     )
-    val transition = rememberInfiniteTransition(label = "blob")
+    val transition = if (MotionPolicy.reducedMotion) null else rememberInfiniteTransition(label = "blob")
+    // 降级时不做无限漂移：固定相位画静态光斑（§3.7「无限装饰动画 → 改静态」）
     val drift = blobs.mapIndexed { i, _ ->
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 17000 + i * 5300, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "blob$i"
-        )
+        if (transition == null) {
+            remember { mutableFloatStateOf(0.15f + i * 0.33f) }
+        } else {
+            transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 17000 + i * 5300, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "blob$i"
+            )
+        }
     }
     val base = scheme.surface
 
@@ -293,7 +302,7 @@ private fun WelcomePage() {
         )
         Spacer(modifier = Modifier.height(14.dp))
         Text(
-            text = "网盘分享链接解析与高速下载",
+            text = "网盘分享 · 视频链接，一站式解析与高速下载",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center
@@ -302,7 +311,16 @@ private fun WelcomePage() {
         Spacer(modifier = Modifier.height(26.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FactChip("10 大网盘")
+            FactChip("7 个视频平台")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FactChip("分片下载")
+            FactChip("磁力 / BT / ed2k")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FactChip("在线预览")
             FactChip("完全免费")
         }
 
@@ -443,7 +461,7 @@ private fun FeaturesPage() {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "一个应用搞定分享链接解析与高速下载",
+            text = "网盘分享与视频链接，一个应用全部搞定",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -455,19 +473,29 @@ private fun FeaturesPage() {
             description = "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享链接自动识别，登录网盘账号后即可解析与下载"
         )
         FeatureRow(
+            icon = Icons.Outlined.Forum,
+            title = "视频链接解析",
+            description = "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv：短链、口令、整段文案粘贴即解析，可选清晰度、批量下载图集"
+        )
+        FeatureRow(
             icon = Icons.Outlined.Speed,
             title = "高速分片下载",
-            description = "多线程并发 + 断点续传，充分利用带宽；也可切换 Gopeed 引擎下载磁力 / BT"
+            description = "多线程并发 + 断点续传 + 慢连接自动换线；B 站高清分轨两轨并行，下载后自动合轨"
+        )
+        FeatureRow(
+            icon = Icons.Outlined.CloudDownload,
+            title = "P2P 下载",
+            description = "磁力 / BT 种子 / ed2k 电驴链接交给下载引擎，支持本地种子文件、Tracker 服务器管理与 DHT 开关"
         )
         FeatureRow(
             icon = Icons.Outlined.Storage,
-            title = "多平台支持",
-            description = "一个应用管理多个网盘账号，统一解析下载入口"
+            title = "在线预览与 Live 图",
+            description = "视频直读直链、边下边播（HLS 原生支持，可全屏 / 拖动）；首次预览缺引擎时会询问是否下载 FFmpeg，装完自动起播；微博、抖音动图可存为动态照片、静图或视频"
         )
         FeatureRow(
             icon = Icons.Outlined.Lock,
-            title = "隐私安全",
-            description = "登录凭证仅存本机，不上传任何服务器"
+            title = "多账号与隐私",
+            description = "网盘与视频平台都支持多账号（主账号 / 备注），凭证仅加密存本机，可导出加密备份换机恢复"
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -618,7 +646,7 @@ private fun TermsPage() {
 
         Spacer(modifier = Modifier.height(18.dp))
         Text(
-            text = "点击下方「开始使用」即表示你已阅读并同意以上条款",
+            text = "点击下方「下一步」即表示你已阅读并同意以上条款",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

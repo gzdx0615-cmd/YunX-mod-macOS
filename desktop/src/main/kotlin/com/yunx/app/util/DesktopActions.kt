@@ -2,8 +2,10 @@ package com.yunx.app.util
 
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.KnownFolders
+import com.sun.jna.platform.win32.Shell32
 import com.sun.jna.platform.win32.Shell32Util
 import com.sun.jna.platform.win32.WinReg
+import com.sun.jna.platform.win32.WinUser
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Toolkit
@@ -47,13 +49,31 @@ object DesktopActions {
         }.getOrDefault(false)
     }
 
-    /** 在资源管理器中显示文件（选中） */
+    /**
+     * 在资源管理器中显示文件（选中）。
+     *
+     * Windows 走 ShellExecute，把 `/select,"<绝对路径>"` 作为**原始参数串**交给系统；
+     * 不能用 ProcessBuilder —— 它按自己的规则给参数加引号/转义，两种写法都会失效：
+     *   1. `/select,` 与路径拆成两个参数：路径里的**半角逗号**会被 Explorer 当成参数分隔符，
+     *      截断后的路径不存在，Explorer 就落到「主文件夹」等默认位置（本次修的 bug）；
+     *   2. 合成一个参数并自带引号：Java 又把引号转义成 `\"`，Explorer 解析不出路径，同样落回默认位置。
+     * ShellExecute 不做任何转义，逗号/空格/中文路径都能正确定位。
+     */
     fun revealFile(path: String): Boolean {
         val file = File(path)
         if (!file.exists()) return false
+        if (WindowsTitleBar.isWindows) {
+            // 返回 HINSTANCE：> 32 表示成功（<= 32 是错误码），失败再退回命令行方式
+            val ret = runCatching {
+                Shell32.INSTANCE.ShellExecute(
+                    null, "open", "explorer.exe",
+                    "/select,\"${file.absolutePath}\"", null, WinUser.SW_SHOWNORMAL
+                )
+            }.getOrNull()
+            if (ret != null && com.sun.jna.Pointer.nativeValue(ret.toPointer()) > 32L) return true
+        }
         return runCatching {
-            val cmd = arrayOf("explorer.exe", "/select,", file.absolutePath)
-            ProcessBuilder(*cmd).start()
+            ProcessBuilder("explorer.exe", "/select,", file.absolutePath).start()
             true
         }.getOrDefault(false)
     }
@@ -66,6 +86,29 @@ object DesktopActions {
             ProcessBuilder("explorer.exe", dir.absolutePath).start()
             true
         }.getOrDefault(false)
+    }
+
+    /**
+     * 把主窗口拉到前台（托盘「显示主窗口」、剪贴板弹窗点「打开」共用）。
+     *
+     * ★ Windows 上必须做两件事，少一件就会出现「点了打开但窗口没到前台」：
+     *   1. **先还原**：窗口可能已**最小化到任务栏**（extendedState 含 ICONIFIED 位），
+     *      此时 toFront() 对它是无效的 —— 必须先把状态改回 NORMAL；
+     *   2. **再置顶置前**：toFront() 单独调用不一定能夺取前台焦点，用 alwaysOnTop 瞬时切换强制置顶。
+     */
+    fun bringWindowToFront(window: Frame?) {
+        val w = window ?: return
+        runCatching {
+            w.isVisible = true
+            if (w.extendedState and Frame.ICONIFIED != 0) {
+                w.extendedState = Frame.NORMAL
+            }
+            val wasOnTop = w.isAlwaysOnTop
+            w.isAlwaysOnTop = true
+            w.toFront()
+            w.requestFocus()
+            w.isAlwaysOnTop = wasOnTop
+        }
     }
 
     /**
@@ -83,6 +126,23 @@ object DesktopActions {
                 "cmd.exe", "/c",
                 "ping -n 3 127.0.0.1 >nul & start \"\" \"${exe.absolutePath}\""
             ).directory(exe.parentFile).start()
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 关闭计算机（「下载完成后关机」用）。
+     *
+     * 走系统 shutdown 命令：普通用户本地关机不需要管理员权限（SeShutdownPrivilege），
+     * 调用方无需提权。非 Windows 直接返回 false（本功能目前仅在桌面端 Windows 提供）。
+     *
+     * @param seconds 关机前延迟秒数（0 = 立即关机）；调用方负责在倒计时期间决定是否取消
+     * @return 是否成功发起
+     */
+    fun shutdownComputer(seconds: Int = 0): Boolean {
+        if (!WindowsTitleBar.isWindows) return false
+        return runCatching {
+            ProcessBuilder("shutdown", "/s", "/t", seconds.coerceAtLeast(0).toString()).start()
             true
         }.getOrDefault(false)
     }
