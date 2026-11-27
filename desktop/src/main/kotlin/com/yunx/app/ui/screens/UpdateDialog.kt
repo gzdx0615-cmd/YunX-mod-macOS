@@ -63,9 +63,9 @@ fun UpdateDialog(
         System.getProperty("os.name", "").lowercase().let { it.contains("mac") || it.contains("darwin") }
     }
     val exeAsset = release.assets.firstOrNull { it.name.endsWith(".exe", true) }
-    val dmgAsset = release.assets.firstOrNull { it.name.endsWith(".dmg", true) }
+    val dmgAsset = release.assets.firstOrNull { it.name.endsWith(".dmg", true) && UpdateChecker.compatibleMacAsset(it.name) }
     val installerAsset = if (isMac) dmgAsset else exeAsset
-    val zipAsset = release.assets.firstOrNull { it.name.endsWith(".zip", true) }
+    val zipAsset = release.assets.firstOrNull { it.name.endsWith(".zip", true) && (!isMac || UpdateChecker.compatibleMacAsset(it.name)) }
     // 说明里的图片复用 README 的自研加载器（无 Coil，走 GitHubMirror 统一镜像加速）
     GitHubMarkdownImageTransformer.mirrorPrefix = GitHubMirror.activePrefix()
     // 紧凑字号：与 README 共用同一份排版（见 ui/theme/Type.kt）

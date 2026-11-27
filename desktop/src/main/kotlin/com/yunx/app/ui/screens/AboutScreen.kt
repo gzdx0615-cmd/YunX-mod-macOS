@@ -656,7 +656,7 @@ private fun WindowsRepoCard() {
 private fun DesktopRepoCard() {
     Card(
         onClick = {
-            DesktopActions.openUrl("https://github.com/QYss777/YunX-macOS")
+            DesktopActions.openUrl("https://github.com/gzdx0615-cmd/YunX-mod-macOS")
         },
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -692,7 +692,7 @@ private fun DesktopRepoCard() {
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "github.com/QYss777/YunX-macOS",
+                    text = "github.com/gzdx0615-cmd/YunX-mod-macOS",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
