@@ -1,6 +1,5 @@
 package com.yunx.app.data.security
 
-import java.io.File
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * 加密等级切换的**核心不变量**：切档只重新包裹 32 字节主密钥，密钥本身不变 ——
@@ -30,7 +30,7 @@ class DbKeyStoreTest {
         DbKeyStore.switchLevel(file, DbEncryptionLevel.LOOSE, DbEncryptionLevel.NORMAL)
         assertTrue("普通档应包裹密钥", DbKeyStore.isWrapped(file))
         val text = file.readText()
-        assertTrue("普通档应带本机派生密钥标识", text.contains(":mk:v1:"))
+        assertTrue("普通档应带本机派生密钥标识", text.contains(":mk:v1:") || text.contains(":mk:mac:v2:"))
     }
 
     @Test

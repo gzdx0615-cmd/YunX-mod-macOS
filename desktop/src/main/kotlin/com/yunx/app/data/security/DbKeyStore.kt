@@ -114,6 +114,8 @@ object DbKeyStore {
     fun unwrap(wrapped: String, level: DbEncryptionLevel): ByteArray {
         val body = wrapped.removePrefix(PREFIX)
         val actual = when {
+            body.startsWith("mk:mac:v2:") -> DbEncryptionLevel.NORMAL
+            body.startsWith("keychain:v1:") -> DbEncryptionLevel.STRICT
             body.startsWith("mk:v1:") -> DbEncryptionLevel.NORMAL
             body.startsWith("dpapi:v1:") -> DbEncryptionLevel.STRICT
             else -> throw IllegalStateException("未知的密钥封装格式")
@@ -123,8 +125,11 @@ object DbKeyStore {
             Log.w(TAG, "密钥封装格式（${actual.label}）与配置档位（${level.label}）不一致，按文件实际格式解包")
         }
         return when (actual) {
-            DbEncryptionLevel.NORMAL -> unwrapMachineKey(body.removePrefix("mk:v1:"))
-            else -> unwrapDpapi(body.removePrefix("dpapi:v1:"))
+            DbEncryptionLevel.NORMAL -> if (body.startsWith("mk:mac:v2:"))
+                unwrapMachineKey(body.removePrefix("mk:mac:v2:"), false)
+                else unwrapMachineKey(body.removePrefix("mk:v1:"), isMac())
+            else -> if (body.startsWith("keychain:v1:")) MacKeychain.load(body.removePrefix("keychain:v1:"))
+                else unwrapDpapi(body.removePrefix("dpapi:v1:"))
         }.also {
             require(it.size == 32) { "invalid credential key length" }
         }
@@ -137,7 +142,7 @@ object DbKeyStore {
         val content = when (level) {
             DbEncryptionLevel.LOOSE -> key
             DbEncryptionLevel.NORMAL -> wrapMachineKey(key).toByteArray(Charsets.UTF_8)
-            DbEncryptionLevel.STRICT -> wrapDpapi(key).toByteArray(Charsets.UTF_8)
+            DbEncryptionLevel.STRICT -> (if (isMac()) "${PREFIX}keychain:v1:${MacKeychain.store(key)}" else wrapDpapi(key)).toByteArray(Charsets.UTF_8)
             DbEncryptionLevel.STRICTEST -> throw IllegalStateException("严格档需要 SQLCipher 支持，暂未实现")
         }
         file.parentFile?.mkdirs()
@@ -168,10 +173,10 @@ object DbKeyStore {
         cipher.init(Cipher.ENCRYPT_MODE, machineKey(salt), GCMParameterSpec(GCM_TAG_BITS, iv))
         val ct = cipher.doFinal(key)
         val b64 = Base64.getEncoder()
-        return "$PREFIX" + "mk:v1:${b64.encodeToString(salt)}:${b64.encodeToString(iv)}:${b64.encodeToString(ct)}"
+        return "$PREFIX" + (if (isMac()) "mk:mac:v2:" else "mk:v1:") + "${b64.encodeToString(salt)}:${b64.encodeToString(iv)}:${b64.encodeToString(ct)}"
     }
 
-    private fun unwrapMachineKey(body: String): ByteArray {
+    private fun unwrapMachineKey(body: String, legacyMac: Boolean = false): ByteArray {
         val parts = body.split(":")
         require(parts.size == 3) { "malformed machine-key blob" }
         val b64 = Base64.getDecoder()
@@ -179,7 +184,7 @@ object DbKeyStore {
         val iv = b64.decode(parts[1])
         val ct = b64.decode(parts[2])
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, machineKey(salt), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.init(Cipher.DECRYPT_MODE, machineKey(salt, legacyMac), GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(ct)
     }
 
@@ -190,29 +195,59 @@ object DbKeyStore {
      * ★ 刻意不掺用户名/计算机名：用户改一次计算机名就会解不开自己的凭证，代价远大于收益。
      * 读不到 MachineGuid 时退回「主机名 + 用户名」（仍有绑定效果，但改名会失效，日志会记一条）。
      */
-    private fun machineKey(salt: ByteArray): SecretKeySpec {
-        val spec = PBEKeySpec(machineFingerprint().toCharArray(), salt, PBKDF2_ITERATIONS, 256)
+    private fun machineKey(salt: ByteArray, legacyMac: Boolean = false): SecretKeySpec {
+        val fingerprint = if (legacyMac)
+            "yunx-desktop|${System.getProperty("os.name").orEmpty()}|${System.getProperty("os.arch").orEmpty()}|${System.getenv("COMPUTERNAME").orEmpty()}-${System.getProperty("user.name").orEmpty()}"
+            else machineFingerprint()
+        val spec = PBEKeySpec(fingerprint.toCharArray(), salt, PBKDF2_ITERATIONS, 256)
         val bytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
         return SecretKeySpec(bytes, "AES")
     }
 
+    /**
+     * 机器指纹暂时读不到：**属于「暂时不可用」，调用方绝不能据此更换主密钥**。
+     *
+     * ★ 旧实现读不到 MachineGuid 就静默退回「主机名 + 用户名」——那会派生出一把**不同的**密钥，
+     *   偶尔一次读取失败就会让解包报 AEADBadTag，被误判成「密钥彻底损坏」→ 换密钥 → 凭证全丢。
+     *   MachineGuid 在 Windows 上始终存在，读不到只可能是暂时性故障，因此宁可本次失败也不换指纹。
+     */
+    class MachineFingerprintUnavailable(message: String) : IllegalStateException(message)
+
     /** 机器指纹（可读性无关，只求稳定唯一） */
-    private fun machineFingerprint(): String = buildString {
+    private fun machineFingerprint(): String {
+        if (isMac()) return "yunx-macos|" + (machineGuid()
+            ?: throw MachineFingerprintUnavailable("暂时读不到 IOPlatformUUID，不更换主密钥"))
+        return buildString {
         append("yunx-desktop|")
         append(System.getProperty("os.name").orEmpty()).append('|')
         append(System.getProperty("os.arch").orEmpty()).append('|')
-        append(machineGuid() ?: run {
-            Log.w(TAG, "读不到 MachineGuid，退回主机名+用户名（改名后本档密钥会失效）")
-            "${System.getenv("COMPUTERNAME").orEmpty()}-${System.getProperty("user.name").orEmpty()}"
-        })
+        append(
+            machineGuid() ?: throw MachineFingerprintUnavailable(
+                "暂时读不到 MachineGuid，本次不做密钥解包（下次会重试）"
+            )
+        )
+    }
+
     }
 
     /** Windows MachineGuid（HKLM\SOFTWARE\Microsoft\Cryptography），普通用户可读 */
-    private fun machineGuid(): String? = runCatching {
+    private fun machineGuid(): String? {
+        if (isMac()) return runCatching {
+            val process = ProcessBuilder("/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) { process.destroyForcibly(); return@runCatching null }
+            Regex("\"IOPlatformUUID\"\\s*=\\s*\"([^\"]+)\"").find(output)?.groupValues?.get(1)
+        }.getOrNull()
+        if (!isWindows()) return runCatching { File("/etc/machine-id").readText().trim().takeIf { it.isNotBlank() } }.getOrNull()
+        return runCatching {
         Advapi32Util.registryGetStringValue(
             WinReg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid"
         ).takeIf { it.isNotBlank() }
     }.getOrNull()
+
+    }
+
+    private fun isMac(): Boolean = System.getProperty("os.name", "").lowercase().contains("mac")
 
     /** 较为严格档：Windows DPAPI（CryptProtectData，绑定当前登录用户） */
     private fun wrapDpapi(key: ByteArray): String {

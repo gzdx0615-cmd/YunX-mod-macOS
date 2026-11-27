@@ -35,6 +35,16 @@ sealed interface BaiduCloudUiState {
 }
 
 /**
+ * 网盘页下载百度直链的请求头。
+ * 百度 CDN 直链的签名与取链（locatedownload）时的客户端 UA 绑定，
+ * 必须与 [BaiduApi.locateDownload] 一致使用 UA_NETDISK，否则返回 403 sign error。
+ */
+internal fun baiduCloudDownloadHeaders(cookie: String): Map<String, String> = mapOf(
+    "Cookie" to cookie,
+    "User-Agent" to BaiduConstants.UA_NETDISK
+)
+
+/**
  * 百度网盘云盘浏览 ViewModel（参考夸克/UC/迅雷云盘）：
  * - 目录浏览（根/子目录/面包屑回退）+ 下拉刷新
  * - 文件操作：下载 / 重命名 / 移动 / 创建分享 / 删除 + 长按多选批量
@@ -210,12 +220,6 @@ class BaiduCloudViewModel(
 
     // ---------- 单文件操作 ----------
 
-    /** 百度下载直链的请求头（Cookie 用于鉴权；UA 用浏览器 UA，CDN 不校验 UA） */
-    private fun downloadHeaders(cookie: String): Map<String, String> = mapOf(
-        "Cookie" to cookie,
-        "User-Agent" to BaiduConstants.UA_WEB
-    )
-
     /**
      * 递归收集文件夹内所有文件（保持目录结构）。
      * 百度目录用绝对路径（dirPath），文件夹路径在 fidToken 字段。
@@ -236,8 +240,8 @@ class BaiduCloudViewModel(
         }
     }
 
-    /** 下载整个文件夹（操作菜单）：递归收集所有文件，保持目录结构保存到 Download */
-    fun downloadFolder() {
+    /** 下载整个文件夹（操作菜单）：递归收集所有文件，保持目录结构保存到指定目录（空=全局设置） */
+    fun downloadFolder(saveDir: String = "") {
         val folder = actionFile ?: return
         if (!folder.isdir) return
         viewModelScope.launch {
@@ -265,7 +269,8 @@ class BaiduCloudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = file.fsize,
                             platform = DownloadPlatform.BAIDU,
-                            headers = downloadHeaders(cookie)
+                            headers = baiduCloudDownloadHeaders(cookie),
+                            saveDir = saveDir
                         )
                         okCount++
                     }
@@ -295,27 +300,36 @@ class BaiduCloudViewModel(
     /** 与 downloadLink 配套的入队参数（弹窗确认后直接入队） */
     private var pendingDownload: PendingDownload? = null
 
+    /** 当前待确认下载的保存目录（空串 = 跟随全局设置）；下载弹窗展示用 */
+    var pendingSaveDir by mutableStateOf("")
+        private set
+
     /** 下载文件：取直链 → 弹出下载确认弹窗（对齐解析页行为，确认后入队） */
-    fun downloadFile() {
+    fun downloadFile() = beginDownload("")
+
+    /** 下载到指定目录：单次覆盖保存目录，不改全局设置 */
+    fun downloadFileTo(saveDir: String) = beginDownload(saveDir)
+
+    private fun beginDownload(saveDir: String) {
         val file = actionFile ?: return
         viewModelScope.launch {
             isOperating = true
             try {
-                val url = api.locateDownload(file.fidToken, cookie())
+                val cookie = cookie()
+                val url = api.locateDownload(file.fidToken, cookie)
                 val link = DownloadLink(
                     fid = file.fidToken,
                     filename = file.fname,
                     downloadUrl = url,
                     size = file.fsize
                 )
+                pendingSaveDir = saveDir
                 pendingDownload = PendingDownload(
                     url = url,
                     fileName = file.fname,
                     size = file.fsize,
-                    headers = mapOf(
-                        "Cookie" to cookie(),
-                        "User-Agent" to BaiduConstants.UA_WEB
-                    )
+                    saveDir = saveDir,
+                    headers = baiduCloudDownloadHeaders(cookie)
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -331,6 +345,7 @@ class BaiduCloudViewModel(
         val pd = pendingDownload ?: return
         downloadLink = null
         pendingDownload = null
+        pendingSaveDir = ""
         viewModelScope.launch {
             isOperating = true
             try {
@@ -339,7 +354,8 @@ class BaiduCloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.BAIDU,
-                    headers = pd.headers
+                    headers = pd.headers,
+                    saveDir = pd.saveDir
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
                 actionFile = null
@@ -356,6 +372,7 @@ class BaiduCloudViewModel(
     fun dismissDownloadDialog() {
         downloadLink = null
         pendingDownload = null
+        pendingSaveDir = ""
     }
 
     /** 重命名 */
@@ -472,7 +489,7 @@ class BaiduCloudViewModel(
     // ---------- 批量操作 ----------
 
     /** 批量下载（不切页；选中文件夹时递归下载整个文件夹并保持目录结构） */
-    fun downloadSelected() {
+    fun downloadSelected(saveDir: String = "") {
         val files = _selected.toList()
         if (files.isEmpty()) return
         viewModelScope.launch {
@@ -508,7 +525,8 @@ class BaiduCloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else file.fname,
                             size = file.fsize,
                             platform = DownloadPlatform.BAIDU,
-                            headers = downloadHeaders(cookie)
+                            headers = baiduCloudDownloadHeaders(cookie),
+                            saveDir = saveDir
                         )
                         okCount++
                     }

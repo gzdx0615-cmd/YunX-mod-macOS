@@ -42,14 +42,6 @@ object SystemProxy {
         data object Unavailable : Inspect
     }
 
-    /** 注册表原始值快照（供诊断 / 验证打印） */
-    data class Raw(
-        val proxyEnable: Int?,
-        val proxyServer: String?,
-        val autoConfigUrl: String?,
-        val proxyOverride: String?
-    )
-
     private val isWindows: Boolean
         get() = System.getProperty("os.name", "").lowercase().contains("win")
 
@@ -58,6 +50,7 @@ object SystemProxy {
      * 调用方据此装配全局代理；本函数只读一次注册表。
      */
     fun inspect(): Inspect {
+        if (System.getProperty("os.name", "").lowercase().contains("mac")) return inspectMac()
         if (!isWindows) {
             Log.i(TAG, "非 Windows 平台，不支持系统代理，按直连处理")
             return Inspect.Unavailable
@@ -69,15 +62,28 @@ object SystemProxy {
         return parse(enable, server, pac, override)
     }
 
-    /** 读取注册表原始值（供诊断/验证打印）；非 Windows 平台返回 null */
-    fun readRaw(): Raw? {
-        if (!isWindows) return null
-        return Raw(
-            proxyEnable = readInt("ProxyEnable"),
-            proxyServer = readString("ProxyServer"),
-            autoConfigUrl = readString("AutoConfigURL"),
-            proxyOverride = readString("ProxyOverride")
-        )
+    private fun inspectMac(): Inspect = runCatching {
+        val process = ProcessBuilder("/usr/sbin/scutil", "--proxy").start()
+        val text = process.inputStream.bufferedReader().use { it.readText() }
+        if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            process.destroyForcibly(); return@runCatching Inspect.Unavailable
+        }
+        parseMac(text)
+    }.getOrDefault(Inspect.Unavailable)
+
+    internal fun parseMac(text: String): Inspect {
+        val values = text.lineSequence().mapNotNull { line ->
+            val pair = line.trim().split(" : ", limit = 2)
+            if (pair.size == 2) pair[0].trim() to pair[1].trim() else null
+        }.toMap()
+        if (values["ProxyAutoConfigEnable"] == "1") return Inspect.PacUnsupported
+        for (kind in listOf("HTTPS", "HTTP")) {
+            if (values["${kind}Enable"] != "1") continue
+            val host = values["${kind}Proxy"].orEmpty()
+            val port = values["${kind}Port"]?.toIntOrNull()
+            if (host.isNotBlank() && port != null && port in 1..65535) return Inspect.Proxy(host, port)
+        }
+        return Inspect.Direct
     }
 
     /**

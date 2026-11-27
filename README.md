@@ -1,198 +1,56 @@
 <div align="center">
+<img src="desktop/src/main/resources/icon.png" width="100" alt="YunX-OS" />
 
-<img src="desktop/src/main/resources/icon.png" width="120" alt="YunX-OS" />
+# YunX-OS · macOS 功能同步预览版
 
-# YunX-OS
-
-**粘贴分享链接，直接高速下载 —— YunX-OS macOS 桌面版**
-
-识别夸克 / UC / 迅雷 / 百度 / 139 / 123 分享链接，自动匹配提取码，Range 分片并发 + 断点续传。
-
-[![Release](https://img.shields.io/github/v/release/QYss777/YunX-macOS?style=flat-square\&label=release\&color=4C8BF5)](https://github.com/QYss777/YunX-macOS/releases/latest)
-[![Stars](https://img.shields.io/github/stars/QYss777/YunX-macOS?style=flat-square\&logo=github\&color=4C8BF5)](https://github.com/QYss777/YunX-macOS/stargazers)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](./LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-000000?style=flat-square\&logo=apple\&logoColor=white)](#构建)
-[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square\&logo=kotlin\&logoColor=white)](https://kotlinlang.org/)
-[![Compose](https://img.shields.io/badge/Compose%20Multiplatform-Desktop-4285F4?style=flat-square\&logo=jetpackcompose\&logoColor=white)](https://www.jetbrains.com/lp/compose-multiplatform/)
-
-[下载最新版](https://github.com/QYss777/YunX-macOS/releases/latest) · [功能](docs/FEATURES.md) · [使用](docs/USAGE.md) · [构建](docs/BUILD.md) · [常见问题](#常见问题) · [与上游差异](docs/UPSTREAM-DIFF.md)
+网盘、视频作品、GitHub、磁力 / BT / ed2k 下载工具。
 
 </div>
 
-***
+基于 [QYss777/YunX-macOS](https://github.com/QYss777/YunX-macOS)，同步
+[tidain/YunX-Desktop](https://github.com/tidain/YunX-Desktop) 的桌面功能。
+原安卓项目为 [CYQawa/YunX](https://github.com/CYQawa/YunX)。保留原作者署名及 AGPL-3.0 协议。
 
-> **YunX-OS 永远免费开源。** 如果你是在任何地方「花钱买到」的，说明你被骗了，请立即退款。
-> 任何收费版本均为二次打包的诈骗版本，与本项目无关。
-
-> **本项目使用 AGPL-3.0 开源协议。** 基于上游 [CYQawa/YunX](https://github.com/CYQawa/YunX)（Android）移植，并参考
-> [tidain/YunX-Desktop](https://github.com/tidain/YunX-Desktop)（Windows 桌面版）的实现，
-> 若你使用了本项目的代码，请同样以 AGPL-3.0 开放源代码。
-
-## 简介
-
-YunX-OS 的 **macOS 桌面版**：粘贴网盘分享链接，浏览分享内容并直接高速下载文件，全程在 Mac 上完成。
-提供 **DMG 安装包** 与 **ZIP 压缩包** 两种分发形式，支持 Apple Silicon 与 Intel Mac。
-
-## 截图
-
-|                                                          |                                                            |
-| :------------------------------------------------------: | :--------------------------------------------------------: |
-| <img src="docs/images/解析.png" width="430" alt="解析" />   | <img src="docs/images/下载.png" width="430" alt="下载" />   |
-|                           解析                           |                           下载                           |
-| <img src="docs/images/网盘.png" width="430" alt="网盘" />   | <img src="docs/images/设置.png" width="430" alt="设置" />   |
-|                           网盘                           |                           设置                           |
-
-## 支持平台
-
-- 夸克网盘
-
-- UC 网盘
-
-- 迅雷网盘
-
-- 百度网盘
-
-- 139 网盘（和彩云）
-
-- 123 云盘
-
-- GitHub（仓库 / 账号 / 文件直链）
-
-> \[!WARNING]
-> **不建议使用百度网盘，可能导致账号被风控！**
+本次同步基线：Mac `b6456090b49953b161f95146d7dc9ead97df58e4`；Windows `00a030f778a65840e9be65baecb15497a94b04ec`。
+这是社区修改的 **Beta 源码**，不是原作者已发布或认证的安装包。
 
 ## 功能
 
-- **分享链接解析** —— 识别夸克 / UC / 迅雷 / 百度 / 139 / 123 分享链接并自动匹配提取码，另支持 GitHub 仓库 / 账号 / 文件直链
+- 网盘：夸克、UC、迅雷、百度、139、123、115、光鸭、蓝奏云、蓝奏云优享版。各平台受接口、登录和分享限制影响；识别链接不等于所有类型都能下载。
+- 视频及作品解析：B站、抖音、快手、微博、小红书、AcFun、Pixiv。支持清晰度选择、图集、HLS、DASH 合轨、Live Photo 等上游流程；部分平台需要登录。
+- Mac 默认内嵌 JavaFX 预览，支持播放、暂停、拖动、倍速、静音、全屏；HLS 使用上游的本地预览会话。FFmpeg 原生 ARM64 / Intel 引擎可在线安装到应用私有目录，用于合轨及 MP4 转封装。
+- FFplay 可作为独立窗口预览（需另行安装，如 `brew install ffmpeg`），使用播放窗口自己的键盘控制。Mac 不使用 Win32 嵌窗与按键转发。
+- Chrome / Edge 浏览器助手：资源嗅探、浏览器下载接管、右键下载、视频页快捷下载。扩展位于 [`browser-extension/`](browser-extension/README.md)。先启动客户端，再加载未打包扩展。
+- 多账号：每个平台多个账号、主账号、备注、逐个删除；旧单账号表自动补列迁移。加密认证备份包含网盘和视频平台账号。
+- GitHub：浏览仓库、账号和 Releases，README 渲染；镜像并发测速、自动选择、固定或自定义前缀。
+- P2P：磁力 / ed2k、本地 `.torrent`、Tracker 列表、DHT 开关、连接信息；需要安装并启用 Gopeed 内核。
+- 内置下载器：分片并发、断点续传、限速、校验、慢连接抢占；实验性单线程 / 多线程直写。
+- Mac 集成：Finder 定位、原生文件选择、菜单栏托盘、下载期间防休眠、Dock 进度、完成通知、窗口位置选择与恢复。
+- 安全存储：普通档使用机器指纹派生密钥，保留旧 Mac 密钥格式读取；较为严格档使用 macOS Keychain。整体数据库 SQLCipher 加密仍与上游一样未实现。
 
-- **高速下载** —— Range 分片并发 + 断点续传 + 失败自动重试 + 全局限速
-
-- **GitHub 浏览与 README 渲染** —— 浏览仓库文件树 / Releases / 账号仓库列表，README 与更新说明以 GFM Markdown 渲染（支持镜像加速）
-
-- **下载进度** —— 应用内实时显示多任务进度、速度与完成状态
-
-- **多种登录方式** —— 内嵌 Chromium 登录 / 一键导入本机浏览器 Cookie / 手动粘贴 Cookie；GitHub 可选 Personal Access Token
-
-- **macOS 系统集成** —— 菜单栏托盘、原生文件对话框、Finder 文件定位、剪贴板分享链接检测
-
-- **桌面体验** —— 深色模式 + 自定义种子色、链接收藏、解析历史、窗口内弹窗覆盖层
-
-- **网络** —— GitHub 下载镜像前缀、HTTP 代理（便于加速或直连受限的场景）
-
-完整功能清单见 **[功能清单](docs/FEATURES.md)**。
-
-## 与上游的差异
-
-桌面版在**登录方式、系统集成（托盘 / 通知 / 原生对话框）、数据存储、构建分发**上做了较大改造，
-并移除了一部分移动端专属功能。完整清单见 **[与上游的差异](docs/UPSTREAM-DIFF.md)**。
-
-本项目的桌面交互和部分功能实现参考了 [tidain/YunX-Desktop](https://github.com/tidain/YunX-Desktop) Windows 桌面版，
-macOS 平台的系统集成和构建分发已按 macOS 环境重新实现。
-
-## 技术栈
-
-| 分类          | 选型                                                 |
-| ----------- | -------------------------------------------------- |
-| 语言          | Kotlin                                             |
-| UI          | Compose Multiplatform（Desktop）+ Material 3         |
-| 持久化         | `sqlite-jdbc`（SQLite）+ `java.util.prefs`           |
-| 网络          | OkHttp 4.12.0（请求 + 分片下载）                           |
-| 内嵌浏览器       | JCEF 132（Chromium）                                 |
-| 原生桥接        | JNA + macOS 原生系统命令                             |
-| 构建分发        | Gradle + jlink + jpackage（DMG / PKG）             |
-| Markdown 渲染 | multiplatform-markdown-renderer（GFM：README / 更新说明） |
-
-## 使用
-
-1. 在「网盘」页登录需要使用的网盘账号（推荐内嵌浏览器登录）
-2. 在「解析」页粘贴分享链接（可带提取码，支持从剪贴板一键粘贴）
-3. 浏览分享内容，点击文件加入下载
-4. 在「下载」页查看进度，支持暂停 / 继续 / 删除 / 打开
-
-设置项、数据目录、托盘操作见 **[使用说明](docs/USAGE.md)**。
+完整功能与平台差异见 [功能清单](docs/FEATURES.md) 和 [本次移植与验证说明](docs/MACOS-PARITY.md)。
 
 ## 构建
 
-要求：macOS 12 或更高版本，JDK 17。Apple Silicon 与 Intel 架构需使用对应的构建环境。
-Gradle 可由系统安装，首次构建会自动下载项目依赖。
+要求 macOS 12+、对应架构的 JDK 17。Apple Silicon 和 Intel 安装包须在相应架构上分别构建。
 
 ```bash
-git clone https://github.com/QYss777/YunX-macOS.git
-cd YunX-macOS
-
-gradle :desktop:run        # 编译并启动开发版
-gradle :desktop:test       # 运行测试
-gradle :desktop:packageDmg # 生成 DMG 安装包
-gradle :desktop:packagePkg # 生成 PKG 安装包
+./gradlew :desktop:test
+./gradlew :desktop:run
+./gradlew :desktop:packageDmg :desktop:packagePkg
 ```
 
-环境要求、版本号管理与打包产物见 **[构建与打包](docs/BUILD.md)**。
+产物位于 `desktop/build/compose/binaries/main/dmg/`、`pkg/`。
+首次运行 Wrapper 会下载 Gradle 8.13。未签名 / 未公证的应用需要通过 macOS 的正常安全设置允许打开。
 
-## 常见问题
+仓库附带 [macOS 双架构 CI](.github/workflows/macos.yml)：运行测试后生成 DMG / PKG，并上传构建产物。该配置随源码提供，不代表远程构建已执行。
 
-<details>
-<summary><b>百度网盘下载 / 转存不了？</b></summary>
+## 验证范围
 
-账号被风控了，详见上游 issue #9。
-
-</details>
-
-<details>
-<summary><b>DMG 和 ZIP 有什么区别？</b></summary>
-
-DMG 双击后将应用拖入「应用程序」目录；ZIP 解压后可直接运行 `YunX-OS.app`。
-两者功能一致，ZIP 适合便携使用。
-
-</details>
-
-<details>
-<summary><b>首次打开提示无法验证开发者？</b></summary>
-
-请在 Finder 中右键应用并选择「打开」，或到「系统设置 → 隐私与安全性」中允许打开未签名应用。
-
-</details>
-
-## 支持开发
-
-- **GitHub Star**：给 [QYss777/YunX-macOS](https://github.com/QYss777/YunX-macOS) 点个 Star
-
-- **提交 Issues**：发现 Bug 或有功能建议欢迎反馈
-
-- **赞赏**：应用内「支持开发」页面可扫码赞赏原安卓项目作者（CYQawa）与桌面移植作者（tidain）
-
-## 文档
-
-| 文档                              | 内容                             |
-| ------------------------------- | ------------------------------ |
-| [功能清单](docs/FEATURES.md)        | 全部功能与细节                        |
-| [使用说明](docs/USAGE.md)           | 快速上手、登录方式、设置项、数据目录、托盘操作        |
-| [构建与打包](docs/BUILD.md)          | 环境要求、命令、版本号、打包产物、目录结构          |
-| [与上游的差异](docs/UPSTREAM-DIFF.md) | 桌面版相对上游 Android 版的新增 / 重做 / 移除 |
-| [免责声明](docs/DISCLAIMER.md)      | 免责声明、协议逆向说明、反倒卖、开源协议           |
+Linux 可验证 Kotlin/JVM 编译、数据库迁移、下载器与本地桥接测试。
+macOS 原生 GUI、JCEF、JavaFX 解码、钥匙串、Dock、菜单栏、Gopeed、安装包仍需真实 Mac 验证。
+各平台线上解析与实际下载需要可用链接，部分需要本人登录账号；本次没有使用用户的账号。
 
 ## 开源协议
 
-本项目基于上游 [CYQawa/YunX](https://github.com/CYQawa/YunX) 移植，并参考
-[tidain/YunX-Desktop](https://github.com/tidain/YunX-Desktop) Windows 桌面版，同样以
-[GNU AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html) 协议开源，详见 [LICENSE](LICENSE)。
-完整的免责与合规说明见 **[免责声明](docs/DISCLAIMER.md)**。
-
-## 更多
-
-- 原安卓项目仓库：<https://github.com/CYQawa/YunX>
-
-- Windows 参考项目：<https://github.com/tidain/YunX-Desktop>
-
-- macOS 版仓库：<https://github.com/QYss777/YunX-macOS>
-
-- 问题与建议：<https://github.com/QYss777/YunX-macOS/issues>
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=QYss777%2FYunX-macOS&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=QYss777/YunX-macOS&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=QYss777/YunX-macOS&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=QYss777/YunX-macOS&type=date&legend=top-left" />
- </picture>
-</a>
+永久免费开源，保留 [GNU AGPL-3.0](LICENSE)。FFmpeg 私有安装器使用 `eugeneware/ffmpeg-static` 的固定版本 `b6.1.1`，校验固定 SHA-256，并保存相应架构的许可证。

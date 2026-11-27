@@ -26,8 +26,17 @@ object WindowsKeepAwake {
     /** 所有 SetThreadExecutionState 调用固定在此线程（状态线程本地，跨线程会失调） */
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "yunx-keep-awake") }
     private val refs = AtomicInteger(0)
+    private val isMac = System.getProperty("os.name", "").lowercase().contains("mac")
+    private var caffeinate: Process? = null
 
+    @Synchronized
     fun acquire() {
+        if (isMac) {
+            if (refs.getAndIncrement() == 0) caffeinate = runCatching {
+                ProcessBuilder("/usr/bin/caffeinate", "-i", "-w", ProcessHandle.current().pid().toString()).start()
+            }.getOrNull()
+            return
+        }
         if (!isWindows) return
         if (refs.getAndIncrement() == 0) {
             executor.execute {
@@ -36,7 +45,14 @@ object WindowsKeepAwake {
         }
     }
 
+    @Synchronized
     fun release() {
+        if (isMac) {
+            if (refs.updateAndGet { (it - 1).coerceAtLeast(0) } == 0) {
+                caffeinate?.destroy(); caffeinate = null
+            }
+            return
+        }
         if (!isWindows) return
         if (refs.decrementAndGet() <= 0) {
             refs.set(0)

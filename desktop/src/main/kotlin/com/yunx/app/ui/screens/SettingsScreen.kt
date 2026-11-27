@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -47,6 +48,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -55,6 +57,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +71,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yunx.app.AppContext
 import com.yunx.app.data.backup.AuthBackupManager
@@ -75,6 +79,7 @@ import com.yunx.app.data.backup.AuthCrypto
 import com.yunx.app.data.download.DownloadDebugLog
 import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.download.DownloadSaver
+import com.yunx.app.data.network.GitHubMirror
 import com.yunx.app.data.network.HttpClients
 import com.yunx.app.data.network.SystemProxy
 import com.yunx.app.data.prefs.SettingsRepository
@@ -93,20 +98,53 @@ import kotlinx.coroutines.withContext
 /** 可选的下载线程数档位（最高 512） */
 private val threadOptions = listOf(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
 
+/** 「GitHub 下载镜像」弹窗选择模式：自动（实测选最快） */
+private const val MIRROR_MODE_AUTO = "auto"
+
+/** 「GitHub 下载镜像」弹窗选择模式：自定义前缀 */
+private const val MIRROR_MODE_CUSTOM = "custom"
+
 /** 按平台下载线程数设置项 */
 private data class ThreadPlatform(val platform: String, val label: String)
 
-private val threadPlatforms = listOf(
-    ThreadPlatform(DownloadPlatform.QUARK, "夸克网盘"),
-    ThreadPlatform(DownloadPlatform.UC, "UC 网盘"),
-    ThreadPlatform(DownloadPlatform.XUNLEI, "迅雷网盘"),
-    ThreadPlatform(DownloadPlatform.BAIDU, "百度网盘"),
-    ThreadPlatform(DownloadPlatform.C139, "139 网盘"),
-    ThreadPlatform(DownloadPlatform.PAN123, "123 云盘"),
-    ThreadPlatform(DownloadPlatform.PAN115, "115 网盘"),
-    ThreadPlatform(DownloadPlatform.GUANGYA, "光鸭云盘"),
-    ThreadPlatform(DownloadPlatform.ILANZOU, "蓝奏云优享版"),
-    ThreadPlatform(DownloadPlatform.LANZOU, "蓝奏云"),
+/** 线程数设置的分组（网盘 / 视频平台 / 其他），分组内按两列或一列排布 */
+private data class ThreadPlatformSection(val title: String, val items: List<ThreadPlatform>)
+
+private val threadPlatformSections = listOf(
+    ThreadPlatformSection(
+        "网盘",
+        listOf(
+            ThreadPlatform(DownloadPlatform.QUARK, "夸克网盘"),
+            ThreadPlatform(DownloadPlatform.UC, "UC 网盘"),
+            ThreadPlatform(DownloadPlatform.XUNLEI, "迅雷网盘"),
+            ThreadPlatform(DownloadPlatform.BAIDU, "百度网盘"),
+            ThreadPlatform(DownloadPlatform.C139, "139 网盘"),
+            ThreadPlatform(DownloadPlatform.PAN123, "123 云盘"),
+            ThreadPlatform(DownloadPlatform.PAN115, "115 网盘"),
+            ThreadPlatform(DownloadPlatform.GUANGYA, "光鸭云盘"),
+            ThreadPlatform(DownloadPlatform.ILANZOU, "蓝奏云优享版"),
+            ThreadPlatform(DownloadPlatform.LANZOU, "蓝奏云"),
+        )
+    ),
+    ThreadPlatformSection(
+        "视频平台",
+        listOf(
+            ThreadPlatform(DownloadPlatform.VIDEO_BILIBILI, "哔哩哔哩"),
+            ThreadPlatform(DownloadPlatform.VIDEO_DOUYIN, "抖音"),
+            ThreadPlatform(DownloadPlatform.VIDEO_KUAISHOU, "快手"),
+            ThreadPlatform(DownloadPlatform.VIDEO_WEIBO, "微博"),
+            ThreadPlatform(DownloadPlatform.VIDEO_XHS, "小红书"),
+            ThreadPlatform(DownloadPlatform.VIDEO_ACFUN, "AcFun"),
+            ThreadPlatform(DownloadPlatform.VIDEO_PIXIV, "Pixiv"),
+        )
+    ),
+    ThreadPlatformSection(
+        "其他",
+        listOf(
+            ThreadPlatform(DownloadPlatform.GENERIC, "通用 / HTTP 下载"),
+            ThreadPlatform(DownloadPlatform.GITHUB, "GitHub 下载"),
+        )
+    ),
 )
 
 /**
@@ -121,7 +159,7 @@ fun SettingsScreen(
     onSupportClick: () -> Unit,
     /** 打开「实验性功能」二级页 */
     onExperimentalClick: () -> Unit,
-    /** 打开「下载引擎」二级页（内置分片下载器 / 外部 Gopeed 引擎） */
+    /** 打开「引擎管理」二级页（下载引擎 / 视频预览引擎） */
     onDownloadEngineClick: () -> Unit,
     /** 打开「储存目录」二级页（下载保存目录 / 下载缓存 / 数据库位置） */
     onStorageClick: () -> Unit,
@@ -143,8 +181,10 @@ fun SettingsScreen(
     var isExporting by remember { mutableStateOf(false) }
     var isImporting by remember { mutableStateOf(false) }
     // 按平台线程数：二级弹窗当前选择的平台
-    var selectedThreadPlatform by remember { mutableStateOf(threadPlatforms.first()) }
+    var selectedThreadPlatform by remember { mutableStateOf(threadPlatformSections.first().items.first()) }
     var showPlatformThreadDialog by remember { mutableStateOf(false) }
+    // 线程数弹窗的排布：一列 / 两列（右上角切换）
+    var threadGridTwoColumns by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     // 下载保存目录：本地状态驱动 UI 刷新，同时同步 Preferences
     val settingsRepo = remember { SettingsRepository() }
@@ -166,7 +206,7 @@ fun SettingsScreen(
     var showConcurrencyDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showRetryDialog by remember { mutableStateOf(false) }
-    // GitHub 下载镜像前缀：null/空 = 使用内置默认（UpdateChecker.MIRROR_PREFIX）
+    // GitHub 下载镜像前缀：null/空 = 自动（由 GitHubMirror 实测选最快）；非空 = 手动固定
     var githubMirror by remember { mutableStateOf(settingsRepo.githubMirrorPrefix) }
     var showMirrorDialog by remember { mutableStateOf(false) }
     // 接受预发布版更新：检查更新时包含 GitHub Pre-release（默认关闭）
@@ -199,7 +239,7 @@ fun SettingsScreen(
         SettingsItem(
             icon = Icons.Outlined.Tune,
             title = "下载线程数",
-            description = "按网盘分别设置分片并发数（默认 32，最高 512）",
+            description = "按平台分别设置分片并发数（默认 32，最高 512）",
             onClick = { showThreadsDialog = true }
         )
 
@@ -367,13 +407,13 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // GitHub 下载镜像：自定义前缀，留空使用内置默认镜像
+        // GitHub 下载镜像：自动（实测选最快）/ 内置预选 / 自定义前缀
         SettingsItem(
             icon = Icons.Outlined.Cloud,
             title = "GitHub 下载镜像",
             description = githubMirror?.takeIf { it.isNotBlank() }
-                ?.let { "已自定义：$it" }
-                ?: "默认：${UpdateChecker.MIRROR_PREFIX}",
+                ?.let { "已固定：${it.removePrefix("https://").removeSuffix("/")}" }
+                ?: "自动选择最快镜像",
             onClick = { showMirrorDialog = true }
         )
 
@@ -405,11 +445,12 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 下载引擎二级页：内置分片下载器 ↔ 外部 Gopeed 引擎（仅影响新任务）
+        // 引擎管理二级页：下载引擎（内置分片下载器 ↔ 外部 Gopeed 引擎，仅影响新任务）
+        // + 视频预览引擎（自动 / 内置 JavaFX / FFplay 在线预览）
         SettingsItem(
             icon = Icons.Outlined.Speed,
-            title = "下载引擎",
-            description = "切换内置分片下载器 / Gopeed 引擎（引擎不支持限速、重试与镜像回退）",
+            title = "引擎管理",
+            description = "下载引擎（内置分片下载器 / Gopeed）与视频预览引擎（FFplay / 内置）",
             onClick = onDownloadEngineClick
         )
 
@@ -423,19 +464,19 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SectionLabel("网盘认证")
+        SectionLabel("认证备份")
         SettingsItem(
             icon = Icons.Outlined.Backup,
-            title = "导出网盘认证",
-            description = "使用至少 8 位口令加密 Cookie/JWT 后导出",
+            title = "导出认证信息",
+            description = "使用至少 8 位口令加密网盘与视频平台的 Cookie/JWT 后导出",
             onClick = { showExportAuthDialog = true }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
         SettingsItem(
             icon = Icons.Outlined.Restore,
-            title = "导入网盘认证",
-            description = "选择加密或明文的认证备份文件，恢复网盘登录",
+            title = "导入认证信息",
+            description = "选择加密或明文的认证备份文件，恢复网盘与视频平台登录",
             onClick = {
                 val path = DesktopActions.pickFile(
                     filters = listOf(
@@ -765,11 +806,11 @@ fun SettingsScreen(
                 onDownloadUpdateApk(url, name, null)
                 SnackbarController.show("已加入下载 $name")
             },
-            // 镜像站下载：用设置页配置的自定义镜像前缀（未配置则用默认），并把 GitHub 直连 URL
+            // 镜像站下载：用当前生效的镜像前缀（自动选最快 / 用户固定），并把 GitHub 直连 URL
             // 作为 fallbackUrl —— 镜像站失效/失败时自动回退直连（与 GitHub 浏览下载行为一致）
             onDownloadMirrorAsset = { url, name ->
                 updateRelease = null
-                val prefix = githubMirror?.ifBlank { null } ?: UpdateChecker.MIRROR_PREFIX
+                val prefix = GitHubMirror.activePrefix()
                 onDownloadUpdateApk(UpdateChecker.mirrorUrl(url, prefix), name, url)
                 SnackbarController.show("已通过镜像站加入下载 $name")
             },
@@ -778,66 +819,62 @@ fun SettingsScreen(
                 // 「不再提示该版本」：按 tag 记住，之后启动检查也会跳过它（将来有更新的版本仍会提示）
                 AppContext.miscPrefs.put("ignored_version", release.tagName)
                 updateRelease = null
-            }
+            },
+            mandatory = release.isMandatoryFor(UpdateChecker.currentVersion())
         )
     }
 
-    // 线程数选择弹窗（按平台）
-    FadeAlertDialog(
-        visible = showThreadsDialog,
-        onDismissRequest = { showThreadsDialog = false },
-        title = { Text("下载线程数") },
-        text = {
-            Column {
-                Text(
-                    text = "按网盘分别设置分片并发数；线程数不是越多越好，适当调整",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                threadPlatforms.forEach { item ->
-                    val current = settingsRepo.downloadThreadsFor(item.platform)
-                    val isXunlei = item.platform == DownloadPlatform.XUNLEI
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !isXunlei) {
+    // 线程数选择弹窗（按平台；右上角可在一列 / 两列之间切换）
+    if (showThreadsDialog) {
+        FadeAlertDialog(
+            visible = true,
+            onDismissRequest = { showThreadsDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "下载线程数", modifier = Modifier.weight(1f))
+                    TextButton(onClick = { threadGridTwoColumns = !threadGridTwoColumns }) {
+                        Text(if (threadGridTwoColumns) "一列" else "两列")
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "按平台分别设置分片并发数；线程数不是越多越好，适当调整",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    threadPlatformSections.forEach { section ->
+                        Text(
+                            text = section.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                        )
+                        ThreadPlatformGrid(
+                            items = section.items,
+                            twoColumns = threadGridTwoColumns,
+                            currentOf = { settingsRepo.downloadThreadsFor(it) },
+                            onClick = { item ->
                                 selectedThreadPlatform = item
                                 showPlatformThreadDialog = true
                             }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = item.label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f)
                         )
-                        Text(
-                            text = if (isXunlei) "固定 8 线程" else "$current 线程",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isXunlei) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            }
-                        )
-                        if (!isXunlei) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                Icons.Outlined.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThreadsDialog = false }) { Text("关闭") }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { showThreadsDialog = false }) { Text("取消") }
-        }
-    )
+        )
+    }
 
     // 单个平台线程数选择（二级弹窗）
     FadeAlertDialog(
@@ -899,8 +936,8 @@ fun SettingsScreen(
                     isExporting = false
                     val target = DesktopActions.saveFile(
                         defaultName = backupManager.defaultBackupFileName(encrypted),
-                        title = "导出网盘认证",
-                        filters = listOf("YunX-OS 认证备份 (*.yunx)" to "*.yunx", "所有文件 (*.*)" to "*.*"),
+                        title = "导出认证信息",
+                        filters = listOf("云析认证备份 (*.yunx)" to "*.yunx", "所有文件 (*.*)" to "*.*"),
                         defaultExtension = "yunx"
                     ) ?: return@launch
                     val saved = withContext(Dispatchers.IO) {
@@ -1160,54 +1197,140 @@ fun SettingsScreen(
         }
     )
 
-    // GitHub 下载镜像前缀设置弹窗（留空 = 使用内置默认镜像）
+    // GitHub 下载镜像设置弹窗：自动（实测选最快）/ 五个内置预选 / 自定义前缀
     if (showMirrorDialog) {
-        // 弹窗内临时输入：打开时带出当前已保存的自定义前缀（无则空）
-        var mirrorInput by remember { mutableStateOf(githubMirror ?: "") }
+        val mirrorSnapshot by GitHubMirror.snapshot.collectAsState()
+        val fastest = GitHubMirror.fastestPrefix()
+        // 当前选择：空 = 自动；命中预选 = 该预选；其余 = 自定义
+        var mode by remember {
+            mutableStateOf(
+                when {
+                    githubMirror.isNullOrBlank() -> MIRROR_MODE_AUTO
+                    githubMirror in GitHubMirror.PRESETS -> githubMirror!!
+                    else -> MIRROR_MODE_CUSTOM
+                }
+            )
+        }
+        // 自定义输入框初值：仅当当前保存值是自定义前缀时才带出
+        var customInput by remember {
+            mutableStateOf(githubMirror?.takeIf { it.isNotBlank() && it !in GitHubMirror.PRESETS } ?: "")
+        }
+        // 打开时若还没测过速，自动跑一轮
+        LaunchedEffect(Unit) { if (mirrorSnapshot.probes.isEmpty()) GitHubMirror.refresh() }
         FadeAlertDialog(
             visible = true,
             onDismissRequest = { showMirrorDialog = false },
             title = { Text("GitHub 下载镜像") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = mirrorInput,
-                        onValueChange = { mirrorInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("镜像前缀 URL") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        singleLine = true
-                    )
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
-                        text = "留空使用默认镜像 ${UpdateChecker.MIRROR_PREFIX}",
+                        text = "当前生效：${GitHubMirror.activePrefix().removePrefix("https://").removeSuffix("/")}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    TextButton(onClick = { mirrorInput = "" }) {
-                        Text("恢复默认")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "内置镜像（按下载速度排序）",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { GitHubMirror.refresh() },
+                            enabled = !mirrorSnapshot.testing
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (mirrorSnapshot.testing) "测速中…" else "刷新测速")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // 自动：由实测结果决定使用哪个镜像
+                    MirrorOptionRow(
+                        title = "自动（选最快）",
+                        subtitle = when {
+                            mirrorSnapshot.testing -> "正在测速…"
+                            fastest != null -> "当前最快：${fastest.removePrefix("https://").removeSuffix("/")}"
+                            else -> "尚未测速，点「刷新测速」测一次"
+                        },
+                        selected = mode == MIRROR_MODE_AUTO,
+                        badge = null,
+                        onClick = { mode = MIRROR_MODE_AUTO }
+                    )
+                    GitHubMirror.PRESETS.forEach { preset ->
+                        val probe = mirrorSnapshot.probes.firstOrNull { it.prefix == preset }
+                        MirrorOptionRow(
+                            title = preset.removePrefix("https://").removeSuffix("/"),
+                            subtitle = mirrorSubtitle(mirrorSnapshot.testing, probe),
+                            selected = mode == preset,
+                            badge = if (fastest == preset) "最快" else null,
+                            onClick = { mode = preset }
+                        )
+                    }
+                    // 自定义前缀：手动填一个（保留原有能力）
+                    MirrorOptionRow(
+                        title = "自定义前缀",
+                        subtitle = "使用你自己的 GitHub 加速前缀",
+                        selected = mode == MIRROR_MODE_CUSTOM,
+                        badge = null,
+                        onClick = { mode = MIRROR_MODE_CUSTOM }
+                    )
+                    if (mode == MIRROR_MODE_CUSTOM) {
+                        OutlinedTextField(
+                            value = customInput,
+                            onValueChange = { customInput = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            label = { Text("镜像前缀 URL") },
+                            placeholder = { Text("https://gh.ddlc.top/") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            singleLine = true
+                        )
                     }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val raw = mirrorInput.trim()
-                        if (raw.isBlank()) {
-                            // 空：恢复内置默认镜像
-                            settingsRepo.githubMirrorPrefix = null
-                            githubMirror = null
-                            showMirrorDialog = false
-                            SnackbarController.show("已恢复默认镜像")
-                        } else if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-                            // 必须是 http/https 开头，否则报错不保存
-                            SnackbarController.show("镜像前缀需以 http:// 或 https:// 开头")
-                        } else {
-                            // 规范化：统一以 / 结尾，拼接原直链时不会粘连
-                            val normalized = if (raw.endsWith("/")) raw else "$raw/"
-                            settingsRepo.githubMirrorPrefix = normalized
-                            githubMirror = normalized
-                            showMirrorDialog = false
-                            SnackbarController.show("GitHub 镜像已更新")
+                        when {
+                            mode == MIRROR_MODE_AUTO -> {
+                                settingsRepo.githubMirrorPrefix = null
+                                githubMirror = null
+                                showMirrorDialog = false
+                                SnackbarController.show("已切换为自动选择最快镜像")
+                            }
+                            mode == MIRROR_MODE_CUSTOM -> {
+                                val raw = customInput.trim()
+                                if (raw.isBlank()) {
+                                    SnackbarController.show("请填写镜像前缀，或改选内置镜像")
+                                } else if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+                                    // 必须是 http/https 开头，否则报错不保存
+                                    SnackbarController.show("镜像前缀需以 http:// 或 https:// 开头")
+                                } else {
+                                    // 规范化：统一以 / 结尾，拼接原直链时不会粘连
+                                    val normalized = if (raw.endsWith("/")) raw else "$raw/"
+                                    settingsRepo.githubMirrorPrefix = normalized
+                                    githubMirror = normalized
+                                    showMirrorDialog = false
+                                    SnackbarController.show("GitHub 镜像已更新")
+                                }
+                            }
+                            else -> {
+                                // 固定某个内置预选镜像
+                                settingsRepo.githubMirrorPrefix = mode
+                                githubMirror = mode
+                                showMirrorDialog = false
+                                SnackbarController.show("已固定镜像：${mode.removePrefix("https://").removeSuffix("/")}")
+                            }
                         }
                     }
                 ) { Text("确定") }
@@ -1367,7 +1490,7 @@ private fun ExportAuthDialog(
     FadeAlertDialog(
         visible = visible,
         onDismissRequest = onDismiss,
-        title = { Text("导出网盘认证") },
+        title = { Text("导出认证信息") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -1398,7 +1521,7 @@ private fun ExportAuthDialog(
                         onClick = { onlyLoggedIn = true }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("仅导出当前已登录的网盘", style = MaterialTheme.typography.bodyMedium)
+                    Text("仅导出当前已登录的账号", style = MaterialTheme.typography.bodyMedium)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1409,7 +1532,7 @@ private fun ExportAuthDialog(
                         onClick = { onlyLoggedIn = false }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("导出全部绑定的网盘", style = MaterialTheme.typography.bodyMedium)
+                    Text("导出全部绑定的账号", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
@@ -1436,7 +1559,7 @@ private fun ImportAuthDialog(
     FadeAlertDialog(
         visible = visible,
         onDismissRequest = onDismiss,
-        title = { Text("导入网盘认证") },
+        title = { Text("导入认证信息") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -1577,6 +1700,74 @@ private fun ProxyModeOption(label: String, selected: Boolean, onClick: () -> Uni
     }
 }
 
+/** 线程数设置网格：按 [twoColumns] 排成一列或两列（两列时最后一行补空占位，保持左对齐） */
+@Composable
+private fun ThreadPlatformGrid(
+    items: List<ThreadPlatform>,
+    twoColumns: Boolean,
+    currentOf: (String) -> Int,
+    onClick: (ThreadPlatform) -> Unit
+) {
+    val columns = if (twoColumns) 2 else 1
+    items.chunked(columns).forEach { rowItems ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            rowItems.forEach { item ->
+                ThreadPlatformCell(
+                    item = item,
+                    threads = currentOf(item.platform),
+                    modifier = Modifier.weight(1f),
+                    onClick = { onClick(item) }
+                )
+            }
+            repeat(columns - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** 单个平台线程数卡片：平台名 + 当前线程数（迅雷固定 8，不可点） */
+@Composable
+private fun ThreadPlatformCell(
+    item: ThreadPlatform,
+    threads: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val fixed = item.platform == DownloadPlatform.XUNLEI
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    ) {
+        Column(
+            modifier = Modifier
+                .clickable(enabled = !fixed, onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = item.label,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (fixed) "固定 $threads 线程" else "$threads 线程",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (fixed) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+            )
+        }
+    }
+}
+
 /** 线程数单选行（用于弹窗两列布局，每行占半宽） */
 @Composable
 private fun RadioThreadRow(
@@ -1612,4 +1803,61 @@ private fun speedLimitText(bps: Long): String {
     } else {
         "${bps / 1024} KB/s"
     }
+}
+
+/** 「GitHub 下载镜像」弹窗的单选项行：单选圆点 + 标题（可带徽标）+ 副标题（ping/速度等） */
+@Composable
+private fun MirrorOptionRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    badge: String?,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                )
+                if (badge != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** 单个镜像的测速副标题：测速中 / 未测速 / 不可用 / 延迟 + 下载速度 */
+private fun mirrorSubtitle(testing: Boolean, probe: GitHubMirror.Probe?): String = when {
+    testing -> "正在测速…"
+    probe == null -> "未测速"
+    !probe.ok -> "不可用"
+    else -> "延迟 ${probe.pingMs?.let { "$it ms" } ?: "未知"} · 下载 ${formatMirrorSpeed(probe.speedBps)}"
+}
+
+/** 测速速度文案：>=1MB/s 显示 MB/s，否则 KB/s */
+private fun formatMirrorSpeed(bps: Long?): String {
+    if (bps == null || bps <= 0L) return "未知"
+    val mb = bps / 1024.0 / 1024.0
+    return if (mb >= 1.0) String.format("%.1f MB/s", mb) else String.format("%.0f KB/s", bps / 1024.0)
 }

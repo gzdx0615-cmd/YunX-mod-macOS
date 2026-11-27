@@ -89,6 +89,10 @@ object TrayManager {
             .onFailure { Log.w("YunX-Tray", "showNotification failed: ${it.message}") }
     }
 
+    fun setProgressTooltip(text: String?) {
+        java.awt.EventQueue.invokeLater { trayIcon?.toolTip = text ?: "YunX-OS" }
+    }
+
     /** 从 classpath 加载 icon.png */
     fun loadTrayIcon(): BufferedImage? = runCatching {
         val stream = Thread.currentThread().contextClassLoader

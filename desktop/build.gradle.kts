@@ -6,7 +6,19 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val javafxPlatform = when {
+    System.getProperty("os.name").lowercase().contains("mac") ->
+        if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "mac-aarch64" else "mac"
+    System.getProperty("os.name").lowercase().contains("win") -> "win"
+    else -> "linux"
+}
+
 dependencies {
+    for (module in listOf("base", "graphics", "media", "swing")) {
+        implementation("org.openjfx:javafx-$module:17.0.13:$javafxPlatform")
+    }
+    implementation("org.mp4parser:muxer:1.9.56") { exclude(group = "junit", module = "junit") }
+    implementation("org.apache.commons:commons-compress:1.27.1")
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
@@ -43,7 +55,7 @@ dependencies {
         val macArch = System.getProperty("os.arch", "").lowercase()
             .let { if (it.contains("aarch64") || it.contains("arm64")) "arm64" else "amd64" }
         implementation("me.friwi:jcef-natives-macosx-$macArch:jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83")
-    } else {
+    } else if (System.getProperty("os.name").lowercase().contains("win")) {
         implementation("me.friwi:jcef-natives-windows-amd64:jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83")
     }
 
@@ -58,13 +70,17 @@ kotlin {
 }
 
 // ---- 版本号单一来源：仓库根目录 version.txt（jpackage / 便携包 / 安装包 / 应用内版本全部由它派生）----
-val appVersion = rootProject.file("version.txt").readText().trim()
+val versionLines = rootProject.file("version.txt").readLines().map { it.trim() }
+val appVersion = versionLines.first()
+val appIsPreview = versionLines.drop(1).any { it.equals("Beta=1", true) }
 require(appVersion.matches(Regex("""\d+(\.\d+)*"""))) { "version.txt 内容非法: '$appVersion'" }
 
 // 生成 Kotlin 常量供 UpdateChecker 使用，避免应用内再维护一份硬编码
 val generateAppVersion by tasks.registering {
     val outDir = layout.buildDirectory.dir("generated/appVersion/kotlin")
     val version = appVersion
+    val preview = appIsPreview
+    inputs.property("preview", preview)
     outputs.dir(outDir)
     inputs.property("version", version)
     doLast {
@@ -76,6 +92,7 @@ val generateAppVersion by tasks.registering {
             |
             |/** 由根目录 version.txt 生成，请勿手改 */
             |internal const val APP_VERSION = "$version"
+            |internal const val APP_IS_PREVIEW = $preview
             |""".trimMargin() + "\n"
         )
     }
@@ -85,6 +102,13 @@ kotlin.sourceSets["main"].kotlin.srcDir(generateAppVersion)
 tasks.withType<Test> {
     useJUnit()
     jvmArgs("-Dfile.encoding=UTF-8", "-Dsun.jnu.encoding=UTF-8")
+    // Tests never read or migrate the developer's real accounts/preferences.
+    val testHome = layout.buildDirectory.dir("test-home").get().asFile
+    doFirst { testHome.mkdirs() }
+    systemProperty("user.home", testHome.absolutePath)
+    systemProperty("java.util.prefs.userRoot", File(testHome, "prefs").absolutePath)
+    environment("YUNX_DESKTOP_DATA_DIR", File(testHome, "data").absolutePath)
+    maxHeapSize = "2g"
 }
 
 // 编译 native/darkmode.cpp → build/native/darkmode.dll（托盘原生菜单暗色桥接层）
@@ -189,7 +213,7 @@ compose.desktop {
             if (isWindowsHost) targetFormats(TargetFormat.Exe)
             else if (hostOs.contains("mac")) targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             // sqlite-jdbc 通过反射加载 java.sql.Driver，jlink 自动检测不到，必须显式声明
-            modules("java.sql", "java.naming")
+            modules("java.sql", "java.naming", "jdk.httpserver", "jdk.unsupported.desktop")
             if (isWindowsHost) {
                 // 每用户安装（%LOCALAPPDATA%\Programs），无需管理员权限
                 windows {
