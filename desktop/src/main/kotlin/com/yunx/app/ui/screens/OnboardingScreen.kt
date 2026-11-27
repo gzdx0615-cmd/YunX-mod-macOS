@@ -475,7 +475,7 @@ private fun FeaturesPage() {
         FeatureRow(
             icon = Icons.Outlined.Forum,
             title = "视频链接解析",
-            description = "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv：短链、口令、整段文案粘贴即解析，可选清晰度、批量下载图集"
+            description = "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv / X（Twitter）：短链、口令、整段文案粘贴即解析，可选清晰度、批量下载图集"
         )
         FeatureRow(
             icon = Icons.Outlined.Speed,

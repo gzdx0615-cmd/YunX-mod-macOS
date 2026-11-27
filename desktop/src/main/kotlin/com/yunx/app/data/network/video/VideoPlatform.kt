@@ -78,6 +78,7 @@ enum class VideoPlatform(
     ),
     KUAISHOU("快手"),
     WEIBO("微博"),
+    X("X（Twitter）"),
     ACFUN("AcFun"),
     BILIBILI(
         displayName = "哔哩哔哩",

@@ -40,6 +40,10 @@ const FALLBACK_QUALITIES = [120, 116, 112, 80, 64, 32, 16];
  */
 const VIDEO_PLATFORMS = [
   {
+    key: 'x', label: 'X（Twitter）', color: '#222222', quality: false,
+    re: /^https?:\/\/(?:www\.|mobile\.|m\.)?(?:x\.com|twitter\.com)\/(?:[A-Za-z0-9_]{1,15}\/status(?:es)?|i\/(?:web\/status|status|videos(?:\/tweet)?))\/\d+(?:[/?#]|$)/i,
+  },
+  {
     key: 'bilibili', label: 'bilibili', color: '#fb7299', quality: true,
     re: /^https?:\/\/([a-z0-9-]+\.)*bilibili\.com\/video\//i,
   },

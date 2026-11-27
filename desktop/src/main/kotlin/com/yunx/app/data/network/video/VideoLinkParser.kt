@@ -1,5 +1,7 @@
 package com.yunx.app.data.network.video
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 /**
  * 识别结果：一条链接属于哪个平台、是哪种资源。
  *
@@ -131,6 +133,7 @@ object VideoLinkParser {
      */
     fun parse(text: String): DetectedVideoLink? {
         val url = urlRegex.find(text.trim())?.value?.trimEnd(*TRAILING.toCharArray()) ?: return null
+        detectX(url)?.let { return it }
         for (rule in rules) {
             val match = rule.regex.find(url) ?: continue
             // 短链没有独立 id：它的资源标识要等重定向之后才有
@@ -145,6 +148,18 @@ object VideoLinkParser {
             )
         }
         return null
+    }
+
+    private fun detectX(url: String): DetectedVideoLink? {
+        val parsed = url.toHttpUrlOrNull() ?: return null
+        if (parsed.host == "t.co" && parsed.pathSegments.size == 1 &&
+            parsed.pathSegments[0].matches(Regex("[A-Za-z0-9]+")))
+            return DetectedVideoLink(VideoPlatform.X, "short", "", url, true)
+        if (parsed.host !in setOf("x.com", "www.x.com", "mobile.x.com", "twitter.com",
+                "www.twitter.com", "mobile.twitter.com", "m.twitter.com")) return null
+        val match = Regex("^/(?:[A-Za-z0-9_]{1,15}/status(?:es)?|i/(?:web/status|status|videos(?:/tweet)?))/(\\d+)(?:/|$)")
+            .find(parsed.encodedPath) ?: return null
+        return DetectedVideoLink(VideoPlatform.X, "status", match.groupValues[1], url)
     }
 
     /** 剪贴板建议用：这段文本里有没有可解析的视频链接 */

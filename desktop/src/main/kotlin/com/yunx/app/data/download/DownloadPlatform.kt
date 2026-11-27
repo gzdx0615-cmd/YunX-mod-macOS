@@ -40,6 +40,7 @@ object DownloadPlatform {
     const val VIDEO_WEIBO = "video_weibo"
     const val VIDEO_XHS = "video_xhs"
     const val VIDEO_ACFUN = "video_acfun"
+    const val VIDEO_X = "video_x"
     const val VIDEO_PIXIV = "video_pixiv"
 
     /** 视频解析平台 → 线程数设置用的平台标识 */
@@ -50,6 +51,7 @@ object DownloadPlatform {
         VideoPlatform.WEIBO -> VIDEO_WEIBO
         VideoPlatform.XHS -> VIDEO_XHS
         VideoPlatform.ACFUN -> VIDEO_ACFUN
+        VideoPlatform.X -> VIDEO_X
         VideoPlatform.PIXIV -> VIDEO_PIXIV
     }
 }

@@ -135,6 +135,7 @@ private val threadPlatformSections = listOf(
             ThreadPlatform(DownloadPlatform.VIDEO_WEIBO, "微博"),
             ThreadPlatform(DownloadPlatform.VIDEO_XHS, "小红书"),
             ThreadPlatform(DownloadPlatform.VIDEO_ACFUN, "AcFun"),
+            ThreadPlatform(DownloadPlatform.VIDEO_X, "X（Twitter）"),
             ThreadPlatform(DownloadPlatform.VIDEO_PIXIV, "Pixiv"),
         )
     ),

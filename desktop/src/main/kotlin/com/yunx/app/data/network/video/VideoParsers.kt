@@ -17,6 +17,7 @@ object VideoParsers {
         DouyinParser,
         KuaishouParser,
         WeiboParser,
+        XParser,
         AcFunParser,
         BilibiliParser,
         XhsParser,

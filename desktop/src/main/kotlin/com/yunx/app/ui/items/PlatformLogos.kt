@@ -18,5 +18,6 @@ fun VideoPlatform.logoAsset(): String = when (this) {
     VideoPlatform.WEIBO -> "platform_logos/weibo.png"
     VideoPlatform.ACFUN -> "platform_logos/acfun.png"
     VideoPlatform.BILIBILI -> "platform_logos/bilibili.png"
+    VideoPlatform.X -> "platform_logos/x.svg"
     VideoPlatform.PIXIV -> "platform_logos/pixiv.png"
 }

@@ -258,7 +258,7 @@ private fun PlatformCard() {
         "蓝奏云" to Icons.Outlined.Cloud,
         "蓝奏云优享版" to Icons.Outlined.Cloud
     )
-    val videoPlatforms = listOf("哔哩哔哩", "小红书", "抖音", "微博", "快手", "AcFun", "Pixiv")
+    val videoPlatforms = listOf("哔哩哔哩", "小红书", "抖音", "微博", "快手", "AcFun", "Pixiv", "X（Twitter）")
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CardIcon(Icons.Outlined.Storage)
@@ -343,7 +343,7 @@ private fun PlatformCard() {
 private fun FeatureCard() {
     val features = listOf(
         "网盘分享解析" to "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享直链识别",
-        "视频链接解析" to "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv；短链、口令、整段文案均可",
+        "视频链接解析" to "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv / X（Twitter）；短链、口令、整段文案均可",
         "高速分片下载" to "多线程并发 + 断点续传 + 慢连接自动换线；B 站高清分轨两轨并行后自动合轨",
         "P2P 下载" to "磁力 / BT 种子 / ed2k 电驴链接交给 Gopeed 引擎下载；支持本地种子文件、Tracker 服务器管理与 DHT 开关",
         "在线预览" to "ffplay 直读直链、真·边下边播（HLS 原生支持）；没装 FFmpeg 时回退内置播放器并可一键下载",

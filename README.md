@@ -17,7 +17,7 @@
 ## 功能
 
 - 网盘：夸克、UC、迅雷、百度、139、123、115、光鸭、蓝奏云、蓝奏云优享版。各平台受接口、登录和分享限制影响；识别链接不等于所有类型都能下载。
-- 视频及作品解析：B站、抖音、快手、微博、小红书、AcFun、Pixiv。支持清晰度选择、图集、HLS、DASH 合轨、Live Photo 等上游流程；部分平台需要登录。
+- 视频及作品解析：B站、抖音、快手、微博、小红书、AcFun、Pixiv、X（Twitter）。支持清晰度选择、图集、HLS、DASH 合轨、Live Photo 等上游流程；部分平台需要登录。
 - Mac 默认内嵌 JavaFX 预览，支持播放、暂停、拖动、倍速、静音、全屏；HLS 使用上游的本地预览会话。FFmpeg 原生 ARM64 / Intel 引擎可在线安装到应用私有目录，用于合轨及 MP4 转封装。
 - FFplay 可作为独立窗口预览（需另行安装，如 `brew install ffmpeg`），使用播放窗口自己的键盘控制。Mac 不使用 Win32 嵌窗与按键转发。
 - Chrome / Edge 浏览器助手：资源嗅探、浏览器下载接管、右键下载、视频页快捷下载。扩展位于 [`browser-extension/`](browser-extension/README.md)。先启动客户端，再加载未打包扩展。
@@ -29,6 +29,12 @@
 - 安全存储：普通档使用机器指纹派生密钥，保留旧 Mac 密钥格式读取；较为严格档使用 macOS Keychain。整体数据库 SQLCipher 加密仍与上游一样未实现。
 
 完整功能与平台差异见 [功能清单](docs/FEATURES.md) 和 [本次移植与验证说明](docs/MACOS-PARITY.md)。
+
+## X（Twitter）解析
+
+支持 `x.com` / `twitter.com` 的公开帖子链接、`/i/status/`、`/i/web/status/`、`/i/videos/` 及 `t.co` 短链。视频可选清晰度，动图按 MP4 保存，图片取原图，多媒体帖可批量下载。浏览器助手已加入 X 帖子快捷下载卡片。
+
+使用 X 自己的公开 syndication 接口，不使用第三方解析站，也不向媒体 CDN 转发账号 Cookie。部分帖子在公开接口中不可见；私密、登录受限、直播和外部站点视频暂不支持。接口变化或限流可能影响可用性。
 
 ## 构建
 
