@@ -34,6 +34,26 @@ jobs:
         run: test "$(uname -m)" = '${{ matrix.arch }}'
       - name: Compile, test, and package
         run: gradle :desktop:test :desktop:packageDmg :desktop:packagePkg --stacktrace
+      - name: Smoke launch packaged app
+        env:
+          YUNX_DESKTOP_DATA_DIR: ${{ runner.temp }}/yunx-smoke-data
+        run: |
+          app=$(find desktop/build/compose/binaries/main/app -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$app"
+          mkdir -p desktop/build/smoke
+          "$app/Contents/MacOS/YunX-OS" > desktop/build/smoke/console.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 25); do
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              cat desktop/build/smoke/console.log
+              find "$YUNX_DESKTOP_DATA_DIR" -name '*.log' -exec tail -80 {} \; || true
+              exit 1
+            fi
+            sleep 1
+          done
+          screencapture -x desktop/build/smoke/desktop.png
+          find "$YUNX_DESKTOP_DATA_DIR" -name '*.log' -exec cp {} desktop/build/smoke/ \; || true
       - name: Upload app, installers, and test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,4 +63,6 @@ jobs:
             desktop/build/compose/binaries/main/dmg/*.dmg
             desktop/build/compose/binaries/main/pkg/*.pkg
             desktop/build/reports/tests/test/
+            desktop/build/test-results/test/
+            desktop/build/smoke/
           if-no-files-found: warn
